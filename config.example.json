@@ -1,0 +1,60 @@
+{
+  "general": {
+    "autostart": true,
+    "lock_panels": false,
+    "hide_desktop_icons": false,
+    "hide_icons_restore": null
+  },
+  "panels": {
+    "Genel": {
+      "color": "#3aa0ff",
+      "opacity": 0.95,
+      "icon_size": 32,
+      "start_collapsed": false,
+      "hover_open": false,
+      "x": 80,
+      "y": 80,
+      "w": 380,
+      "h": 280,
+      "collapsed": false,
+      "order": [],
+      "specials": [],
+      "type": "shortcut",
+      "title_font": "Segoe UI",
+      "title_size": 9,
+      "title_color": "#e8e8ec",
+      "title_bold": true,
+      "title_italic": false,
+      "content_font": "Segoe UI",
+      "content_size": 9,
+      "content_color": "#e8e8ec",
+      "content_bold": false,
+      "content_italic": false
+    },
+    "Notlarım": {
+      "color": "#3aa0ff",
+      "opacity": 0.95,
+      "icon_size": 32,
+      "start_collapsed": false,
+      "hover_open": false,
+      "x": 480,
+      "y": 80,
+      "w": 380,
+      "h": 280,
+      "collapsed": false,
+      "order": [],
+      "specials": [],
+      "type": "note",
+      "title_font": "Segoe UI",
+      "title_size": 9,
+      "title_color": "#e8e8ec",
+      "title_bold": true,
+      "title_italic": false,
+      "content_font": "Segoe UI",
+      "content_size": 9,
+      "content_color": "#e8e8ec",
+      "content_bold": false,
+      "content_italic": false
+    }
+  }
+}

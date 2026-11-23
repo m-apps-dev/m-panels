@@ -1,0 +1,15 @@
+# M Panels - pinned versions (Python 3.12, installed in a venv: python -m venv venv; venv\Scripts\pip install -r requirements.txt).
+# Direct imports: pillow, tkinterdnd2, pystray, pywin32, icalendar, recurring-ical-events
+pillow==12.3.0
+tkinterdnd2==0.7.0
+pystray==0.19.5
+pywin32==312
+icalendar==7.3.0
+recurring-ical-events==3.8.2
+# transitive (pinned too)
+x-wr-timezone==2.0.1
+python-dateutil==2.9.0.post0
+six==1.17.0
+tzdata==2026.6
+typing-extensions==4.12.2
+click==8.5.1
