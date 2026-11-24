@@ -77,7 +77,7 @@ def pump(sec=0.3):
 pump(0.5)
 check(os.path.isdir(ctx.panels_root), "Paneller klasörü deneme masaüstünde oluştu")
 check(winutil.is_hidden(ctx.panels_root), "Paneller klasörü gizli")
-check(ui.DEFAULT_PANEL_NAME in app.panels, "ilk açılışta varsayılan 'General' paneli oluştu")
+check(ui.DEFAULT_PANEL_NAME in app.panels, "ilk açılışta varsayılan 'Sample' paneli oluştu")
 
 p1 = app.panels[ui.DEFAULT_PANEL_NAME]
 app.rename_panel(p1, "Belgeler")
@@ -334,7 +334,7 @@ app.open_settings("Belgeler")
 pump(0.4)
 S = app.settings_win
 tabs = [S.nb.tab(i, "text") for i in S.nb.tabs()]
-check(tabs == ["Panel", "Title", "Content", "General", "About"], "ayarlar sekmeleri: " + " · ".join(tabs))
+check(tabs == ["General", "Panel", "Title", "Content", "Bar", "About"], "ayarlar sekmeleri: " + " · ".join(tabs))
 check(S.win.title() == f"M Panels v{__version__} — Settings", "ayarlar başlığında sürüm (version.py): " + S.win.title())
 check(not hasattr(S, "ver"), "Genel sekmesinde sürüm satırı kalmadı")
 check(S.about_ver.cget("text") == f"v{__version__}" and S.about_name.cget("text") == "M Panels",
@@ -353,7 +353,7 @@ check(f"v{__version__}" in _news and "v0.1.0" in _news and "Calendar" in _news, 
 S.v_about.set("help"); S.show_about()
 S.show_tab("general")
 pump(0.2)
-check(S.nb.index(S.nb.select()) == 3 and "disabled" in S.cb_hide.state(), "Genel sekmesi açıldı; test modunda ikon kutusu gri")
+check(S.nb.index(S.nb.select()) == 0 and "disabled" in S.cb_hide.state(), "Genel sekmesi açıldı; test modunda ikon kutusu gri")
 check(hasattr(S, "cb_lock") and hasattr(S, "cb_auto"), "Genel: kilit ve Windows ile başlat kutuları var")
 
 # --- 3) başlık ve içerik ayrı + eski config çevirisi
@@ -692,7 +692,7 @@ if calendar_panel.AVAILABLE:
         pump(0.4)
         S = app.settings_win
         tabs = [S.nb.tab(i, "text") for i in S.nb.tabs()]
-        check(tabs == ["Panel", "Title", "Content", "Calendar", "General", "About"],
+        check(tabs == ["General", "Panel", "Title", "Content", "Calendar", "Bar", "About"],
               "takvim paneli seçiliyken sekmeler: " + " · ".join(tabs))
         check([c["name"] for c in S.cal_list] == ["Work", "Home"]
               and len(S.cal_tree.get_children()) == 2 and "fake.invalid" not in str(
@@ -866,7 +866,7 @@ if calendar_panel.AVAILABLE:
         S.select(next(n for n in app.panels if n != "Takvim"))
         pump(0.2)
         tabs =[S.nb.tab(i, "text") for i in S.nb.tabs()]
-        check(tabs == ["Panel", "Title", "Content", "General", "About"], "başka panel seçilince Calendar sekmesi kalktı")
+        check(tabs == ["General", "Panel", "Title", "Content", "Bar", "About"], "başka panel seçilince Calendar sekmesi kalktı")
         S.win.destroy()
         # errors must not break the panel or the program
         cp.cfg["calendar"].update(view="list", calendars=[])
@@ -1115,6 +1115,76 @@ if _pw:
 else:
     print("ATLANDI  pythonw bulunamadı")
 
+
+# bar (v1.2 adım 1): TEST kipinde çizilir, yer ayırmaz; gerçek pencere stilleri
+import fakedisplays as _fd                              # noqa: E402
+sig_before = _fd.displays.signature(SMOKE_DISPLAYS.probe())
+check(app.apply_bar(True, {"enabled": True, "time_format": "24h", "show_date": True}), "bar: TEST kipinde açıldı")
+pump(0.3)
+bw = app.bar.win
+check(winutil.bar_style_ok(bw.top), "bar penceresi: araç penceresi, odak almaz, fareyi alır (tıklanabilir)")
+check(bool(bw.top.attributes("-topmost")) and bw.top.winfo_viewable(), "bar penceresi görünür ve en üstte")
+check(bw.top.winfo_height() == mpanels.theme.BAR_HEIGHT, "bar yüksekliği 32 px")
+check(any(bw.cv.type(i) == "text" and ui.TEST_TAG not in bw.cv.itemcget(i, "text") and bw.cv.itemcget(i, "text")
+          for i in bw.cv.find_all()), "bar üzerinde tarih/saat yazısı var")
+check(len(bw.buttons) >= 3 and bw.buttons[0]["x"] == mpanels.theme.BAR_LEFT_RESERVE and any(b["active"] for b in bw.buttons),
+      "bar: TEST kipinde sahte pencere listesi düğme olarak çizildi (solda boşluk, etkin olan işaretli)")
+_b = bw.buttons[1]
+bw._on_press(type("E", (), {"x": _b["x"] + 5, "x_root": 0})())
+bw._on_release(type("E", (), {"x": _b["x"] + 5, "x_root": 0})())
+check(app.bar.tasks.actions.calls == [("front", _b["hwnd"])] and type(app.bar.tasks.actions).__name__ == "FakeActions",
+      "bar: TEST kipinde tıklama yalnız KAYDEDİLDİ (gerçek pencereye dokunulmadı)")
+check(all(b["h"] == mpanels.theme.BAR_BTN_H for b in bw.buttons) and any(b["frame"] == mpanels.theme.bar_palette()["border"] for b in bw.buttons),
+      "bar: düğmeler 26 px yüksekliğinde, çerçeveli (varsayılan renkler)")
+bw.set_look({"border": "#ff0000"}, False)
+check(all(b["w"] == mpanels.theme.BAR_ICON_ONLY_W for b in bw.buttons if b["kind"] == "task") and any(b["frame"] == "#ff0000" for b in bw.buttons),
+      "bar: yazı kapalı = 32 px simge düğmeleri; kullanıcı rengi uygulandı")
+bw.set_look({}, True)
+_asked, _gave = [], []
+_real_tf, _real_pn = winutil.take_foreground, winutil.post_null
+winutil.take_foreground = lambda w: _asked.append(1) or True        # smoke never moves the real foreground
+winutil.post_null = lambda w: None
+_popped = []
+bw._popup = lambda m, x, y: _popped.append(m)
+app.bar.tasks.actions.calls.clear()
+bw.cv.event_generate("<Button-3>", x=5, y=5)
+bw.top.update()
+pump(0.2)
+winutil.take_foreground, winutil.post_null = _real_tf, _real_pn
+check(len(_asked) == 1 and len(_popped) == 1, "bar: sağ tık menüyü açmadan önce ön plana alındı (Escape/dış tıklama için)")
+check(bw.give_back is not None and app.bar.tasks.previous_active() == 1000, "bar: 'önceki etkin' kendi penceremiz değil")
+check(app.bar.shell.hooks_installed is False if hasattr(app.bar.shell, "hooks_installed") else True,
+      "bar: TEST kipinde gerçek kanca kurulmadı")
+check(_fd.displays.signature(SMOKE_DISPLAYS.probe()) == sig_before, "bar TEST kipinde çalışma alanını değiştirmedi")
+# arama (adım 4): TEST kipinde düğme çizilir, pencere açılır, hiçbir şey gerçekten başlatılmaz / kaydedilmez
+_real_tf2 = winutil.take_foreground
+winutil.take_foreground = lambda w: True
+_s = app.bar.search
+check(_s is not None and bw.search_button is not None and bw.search_button["kind"] == "search",
+      "arama: düğme çizildi (TEST kipi)")
+_s.open(0)
+pump(0.2)
+check(_s.is_open() and _s.win.top.winfo_viewable(), "arama: pencere açıldı")
+_s.win.var.set("a")
+pump(0.5)
+check(type(app.search_actions).__name__ == "FakeSearchActions", "arama: TEST kipinde sahte eylemler")
+_rows = list(_s.rows)
+_s.on_enter()
+check(bool(_rows) and not _s.is_open() and app.search_actions.calls == [("launch", _rows[0][1].parsing)],
+      "arama: Enter yalnız KAYDEDİLDİ, program başlamadı")
+check(app.bar.hotkey_name == "off" and app.bar.shell.hotkey_registered is False
+      if hasattr(app.bar.shell, "hotkey_registered") else True, "arama: TEST kipinde gerçek kısayol kaydedilmedi")
+# Başlat düğmesi (adım 5): TEST kipinde çizilir, tık yalnız KAYDEDİLİR, gerçek tuş gönderilmez
+check(bw.start_button is not None and bw.start_button["kind"] == "start" and bw.start_button["x"] < theme.BAR_SEARCH_BTN_X,
+      "başlat: düğme çizildi, arama düğmesinin solunda (TEST kipi)")
+_sx = bw.start_button["x"] + 5
+bw._on_press(mock.Mock(x=_sx, x_root=_sx))
+bw._on_release(mock.Mock(x=_sx, x_root=_sx))
+check(type(app.start_actions).__name__ == "FakeStartActions" and app.start_actions.calls == [("win",)],
+      "başlat: TEST kipinde tık yalnız KAYDEDİLDİ, Win tuşu gönderilmedi")
+winutil.take_foreground = _real_tf2
+check(app.apply_bar(False, {"enabled": True, "time_format": "24h", "show_date": True}) and app.bar is None
+      and not bw.top.winfo_exists(), "bar kapatıldı, pencere gitti")
 
 # bellek
 out = subprocess.check_output(["tasklist", "/FI", f"PID eq {os.getpid()}", "/FO", "CSV", "/NH"], text=True,

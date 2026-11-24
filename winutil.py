@@ -287,6 +287,52 @@ def make_overlay(tk_window):
         pass
 
 
+def make_bar_window(tk_window):
+    """The bar window: out of the taskbar/Alt+Tab and never activated by a click, but (unlike make_overlay) it takes
+    the mouse (right-click menu). Call it once, while the window is withdrawn."""
+    try:
+        tk_window.update_idletasks()
+        hwnd = _hwnd(tk_window)
+        style = _user32.GetWindowLongW(hwnd, _GWL_EXSTYLE)
+        want = (style | _WS_EX_TOOLWINDOW | _WS_EX_NOACTIVATE) & ~_WS_EX_APPWINDOW
+        _user32.SetWindowLongW(hwnd, _GWL_EXSTYLE, want)
+    except Exception:
+        pass
+
+
+def hwnd_of(tk_window):
+    """The native window handle of a Tk window (the top-level frame), as an int."""
+    return int(_hwnd(tk_window))
+
+
+def take_foreground(tk_window):
+    """Make this window the foreground window just before a menu opens from it. Windows closes a pop-up menu on Escape
+    or an outside click only when the menu's owner is the foreground window; a NOACTIVATE bar is not, so without this
+    Escape does nothing and the click that dismisses the menu is swallowed. True if the window now is the foreground."""
+    try:
+        hwnd = _hwnd(tk_window)
+        _user32.SetForegroundWindow(hwnd)
+        return int(_user32.GetForegroundWindow() or 0) == int(hwnd)
+    except Exception:
+        return False
+
+
+def post_null(tk_window):
+    """The WM_NULL after a pop-up menu (the documented companion of the SetForegroundWindow before it)."""
+    try:
+        _user32.PostMessageW(_hwnd(tk_window), 0, 0, 0)
+    except Exception:
+        pass
+
+
+def bar_style_ok(tk_window):
+    """True if the window is a tool window that is never activated, still takes the mouse and is not click-through."""
+    tk_window.update_idletasks()
+    style = _user32.GetWindowLongW(_hwnd(tk_window), _GWL_EXSTYLE)
+    need = _WS_EX_TOOLWINDOW | _WS_EX_NOACTIVATE
+    return (style & need) == need and not (style & (_WS_EX_APPWINDOW | _WS_EX_TRANSPARENT))
+
+
 def overlay_style_ok(tk_window):
     """True if the window is click-through, never activated and hidden from the taskbar (see make_overlay)."""
     tk_window.update_idletasks()
@@ -481,6 +527,15 @@ def find_pythonw():
         return cand
     import shutil
     return shutil.which("pythonw")
+
+
+def small_icon_size():
+    """SM_CXSMICON: the size Windows draws a tray icon at (16 at 100 %, more on a scaled display). 16 if it cannot be read."""
+    try:
+        n = int(ctypes.windll.user32.GetSystemMetrics(49))
+    except Exception:                                    # noqa: BLE001
+        return 16
+    return n if 12 <= n <= 64 else 16
 
 
 def app_icon_path():

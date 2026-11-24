@@ -35,7 +35,7 @@ To also create a "Start with Windows" shortcut and a desktop shortcut:
 venv\Scripts\python kur.py --shortcuts --skip-pip
 ```
 
-`--skip-pip` matters: without it `kur.py` upgrades the packages instead of keeping the versions pinned in `requirements.txt`. The shortcuts target `pythonw.exe` directly. On first run the hidden `Paneller` folder and a "General" panel are created. Nothing in your Startup or Desktop folder is touched unless you pass `--shortcuts`.
+`--skip-pip` matters: without it `kur.py` upgrades the packages instead of keeping the versions pinned in `requirements.txt`. The shortcuts target `pythonw.exe` directly. On the very first run (no `config.json` yet) the hidden `Paneller` folder and a "Sample" panel are created; later starts never add a panel, so you can delete it and use only the bar. Nothing in your Startup or Desktop folder is touched unless you pass `--shortcuts`.
 
 To try it without touching your real desktop, use `M-Panels-Test.bat` (see "Test mode" below).
 
@@ -45,7 +45,7 @@ To try it without touching your real desktop, use `M-Panels-Test.bat` (see "Test
 - **Items:** double-click opens, right-click gives Open / Open file location / Rename / Return to desktop. Drag items to reorder them or to move them to another panel.
 - **Tray icon:** Show / Hide, New panel, Settings, Quit. `pythonw mpanels.py --quit` asks the running copy to quit.
 - **Single instance:** starting M Panels while it runs just shows its panels and brings Settings to the front.
-- **Settings** (tabs: Panel, Title, Content, Calendar for calendar panels, General, About): name, color, opacity, start collapsed, open on hover, text styles, icon size, Start with Windows, Lock panels, Hide desktop icons, snapping. Nothing changes until you press Apply; closing with unapplied changes asks Apply / Discard / Cancel.
+- **Settings** (tabs: General, Panel, Title, Content, Calendar for calendar panels, Bar, About; General is shown first): name, color, opacity, start collapsed, open on hover, text styles, icon size, Start with Windows, Lock panels, Hide desktop icons, snapping. Nothing changes until you press Apply; closing with unapplied changes asks Apply / Discard / Cancel.
 - **Hide desktop icons** changes Explorer's "Show desktop icons" setting and restores it when M Panels quits. After a crash: `python mpanels.py --restore-desktop-icons`.
 
 ### Dragging items in
@@ -71,13 +71,23 @@ Choose "Calendar" in the New panel window. Calendars are read from **secret iCal
 
 (The menu names change from time to time; look for "secret iCal address" or "publish calendar / ICS link".)
 
-**Add it:** Settings > Calendar > Add..., then give it a name, paste the address (it is masked; "Show" reveals it), optionally pick a color, and press Apply. Each calendar can be switched on or off. If you used the older M Calendar program, "Import from M Calendar config..." reads its calendar list once.
+**Add it:** Settings > Calendar > Add..., then give it a name, paste the address (it is masked; "Show" reveals it), optionally pick a color (in the list, click a calendar's color square to change it), and press Apply. Each calendar can be switched on or off. If you used the older M Calendar program, "Import from M Calendar config..." reads its calendar list once.
 
 > **Warning:** `config.json` and the automatic copies in `backups\` contain your calendar addresses. Anyone who has an address can read that calendar. Do not share, commit or post these files. The addresses are never written to `mpanels.log`, error messages, window titles or tooltips.
 
 Network access happens in a background thread, so the panel never freezes. A calendar that cannot be fetched shows a short message in the panel (calendar name and error type only); the last good data stays visible.
 
 Tested with Google Calendar and Outlook.com secret iCal addresses.
+
+## Bar
+
+An optional strip along the top of the main monitor (Settings > Bar > "Show bar"; off by default). It shows the date and time on the right and, with "Show open windows", one button per open window: click to bring it forward, click the active one to minimize it, click a minimized one to restore it.
+
+- **Look:** buttons have a thin rounded frame like the panels. Settings > Bar > Colors changes the bar background, button, button frame, text and the active window's frame (click the color box; "Reset" per color, "Reset colors" for all); the sample strip shows the result before Apply.
+- **Icons only:** "Show window titles" off makes every button a 32 px icon (the tooltip shows the title); a window with no icon gets its first letter.
+- **Right-click** a window button for "Close window" (asks the window to close, like its X button); right-click anywhere else on the bar for "Settings…". Quitting M Panels gives the screen strip back.
+- **Start:** the button with four colored tiles (no frame, the same picture as the tray icon) at the very left (Settings > Bar > "Show Start button", on by default) opens and closes the real Windows Start menu by pressing the Win key once. Windows shows that menu at the bottom left of the screen (where the taskbar is), not under the bar. Right-click on the button: "Settings…".
+- **Search:** the magnifier button at the left end of the bar (Settings > Bar > Search) opens a small window: type a program name, press Enter to start the first match (arrows and a click work too); Esc closes it. The list is the Start menu's "All apps" (Store apps included; "Include Store apps" can leave them out). An optional shortcut key (Win+Alt+Space or Ctrl+Shift+Space) opens and closes it, and an optional last row "Search Windows for '…'" hands the text on to Windows Search.
 
 ## Config, log and backups
 
@@ -103,6 +113,9 @@ venv\Scripts\python tests\smoke.py
 - Panels that were on two different missing monitors can end up on top of each other when both are shown on the main monitor.
 - Monitors with different DPI scaling have not been tested.
 - Panels below the top of a stack may extend past the bottom edge of the screen.
+- Bar: a window of a program running as administrator can be brought forward from the bar, but it cannot be minimized, restored or closed ("Close window") from it (Windows blocks this between a normal and an elevated program). Nothing is shown; one line goes to the log.
+- Bar: the Start button opens the Windows Start menu where Windows puts it (bottom left, by the taskbar), not under the bar.
+- Search: Store apps show a general icon with a letter (their own logo cannot be read). The optional "Search Windows for '...'" row types into Windows Search only if that opens within about a second.
 - Windows only; there is no macOS or Linux version.
 
 ## Code layout

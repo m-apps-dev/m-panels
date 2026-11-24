@@ -14,6 +14,7 @@ import unittest
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
+import changelog  # noqa: E402
 import fileops  # noqa: E402
 import notefmt  # noqa: E402
 import richtext  # noqa: E402
@@ -264,7 +265,12 @@ class TestVersion(unittest.TestCase):
         self.assertRegex(version.__version__, r"^\d+\.\d+\.\d+$")
 
     def test_surum_0_5_1(self):
-        self.assertEqual(version.__version__, "1.1.1")
+        # No hard-coded number: version.py is the one source, so check the file itself against the module and CHANGELOG.
+        with open(os.path.join(ROOT, "version.py"), encoding="utf-8") as f:
+            m = re.search(r'(?m)^__version__\s*=\s*"([^"]+)"', f.read())
+        self.assertIsNotNone(m)
+        self.assertEqual(version.__version__, m.group(1))
+        self.assertEqual(changelog.load()[0]["version"], version.__version__)
 
     def test_notlar_md_surum_gecmisinde_guncel_surum_var(self):
         if not os.path.isfile(os.path.join(ROOT, "NOTLAR.md")):

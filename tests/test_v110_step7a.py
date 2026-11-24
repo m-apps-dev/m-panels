@@ -1388,8 +1388,8 @@ class TestSettingsFromTray(Base):
         S.ask_unsaved = lambda: asked.append(1) or "cancel"
         S.request_select("Zed Cal")
         self.assertEqual(asked, [1])
-        self.assertEqual(S.cur, "General")                                               # Cancel: stays
-        self.assertEqual(S.v["panel"].get(), "General")
+        self.assertEqual(S.cur, "Sample")                                                         # Cancel: stays
+        self.assertEqual(S.v["panel"].get(), "Sample")
         S.ask_unsaved = lambda: "discard"
         S.request_select("Zed Cal")
         self.assertEqual(S.cur, "Zed Cal")

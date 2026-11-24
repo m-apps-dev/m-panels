@@ -54,10 +54,10 @@ class TestChangelogUnreleased(unittest.TestCase):
         self.assertEqual(r[0]["sections"], [("General", ["a"])])
 
     def test_real_changelog_has_the_entry_for_this_step_in_the_release(self):
-        # v1.1.0 was released (7c): the former '## Unreleased' section is now the 1.1.0 section
+        # v1.1.0 was released (7c): its section holds the step 1 entry. (An '## Unreleased' section may exist again
+        # while the next version is in progress: the parser skips it, see the test below.)
         with open(os.path.join(ROOT, "CHANGELOG.md"), encoding="utf-8") as f:
             text = f.read()
-        self.assertNotIn("## Unreleased", text)
         rel = text.split("## 1.1.0", 1)[1].split("\n## ", 1)[0]
         self.assertIn("Settings > Calendar", rel)
         self.assertNotIn("Unreleased", [r["version"] for r in changelog.load()])

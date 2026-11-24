@@ -140,6 +140,12 @@ class TestAtStartup(Base):
         self.addCleanup(lambda: [a.quit() for a in self.apps])
         self.n = 0
 
+    def make_panel(self, name="Docs"):
+        """The program makes a panel only at the very first start (no config.json); a started one has its own."""
+        ctx = fileops.Ctx(self.desk, self.pub)
+        fileops.ensure_panels_root(ctx)
+        fileops.create_panel(ctx, name)
+
     def start(self):
         self.n += 1
         app = mpanels.App(fileops.Ctx(self.desk, self.pub), self.tmp, test_mode=True, use_tray=False,
@@ -196,6 +202,7 @@ class TestAtStartup(Base):
 
     def test_a_failing_backup_does_not_stop_the_start_and_is_logged(self):
         self.write(content(7))
+        self.make_panel()
         with mock.patch("backup.shutil.copyfile", side_effect=OSError("disk full")), \
                 self.assertLogs("mpanels", level="WARNING") as cm:
             app = self.start()
@@ -204,6 +211,7 @@ class TestAtStartup(Base):
 
     def test_an_unexpected_error_in_the_backup_code_does_not_stop_the_start(self):
         self.write(content(7))
+        self.make_panel()
         with mock.patch("backup.list_backups", side_effect=RuntimeError("boom")):
             app = self.start()
         self.assertTrue(app.panels)

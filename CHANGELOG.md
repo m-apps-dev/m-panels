@@ -2,6 +2,69 @@
 
 Newest first. The About tab in Settings reads this file; the current version (version.py) must have an entry.
 
+## 1.2.0 — 2026-11-24
+
+### Bar
+- New, off by default: a bar along the top of the main monitor, full width and 32 px high, always on top. Windows keeps the strip for it (like the taskbar does), so maximized windows stop below it. Turn it on in Settings > Bar > "Show bar" (press Apply). M Panels does not change the Windows taskbar settings.
+- The bar shows the date and time on the right, for example "Tuesday 24 November · 14:32", without seconds. It updates when the minute changes and corrects itself after the computer wakes up or the clock or time zone changes. Settings > Bar: show date and time, time format (24-hour or 12-hour), show the date.
+- Right-click on a window button shows only "Close window". Right-click on the empty bar, on the date and time, on the "+N" button or on the Start button shows only "Settings…", which opens Settings on the Bar tab. Middle click on a window button does nothing. The tray "Show / Hide" does not hide the bar, because Windows has reserved space for it.
+- Panels follow at once: when the bar appears or goes away (also when Windows moves its strip), panels that would sit under it are shown below it right away, and they go back to where you put them when the bar goes. Their saved places in config.json are never changed by the bar.
+- Quitting M Panels gives the strip back. If the program is ended by force or crashes, Windows gives it back by itself (measured: within half a second). If Explorer restarts, the bar registers again.
+- Settings > Bar > Colors: Bar background, Button, Button border, Text and Active window. Click the color box itself to pick a color (the hand cursor shows it is clickable; keyboard: focus the box, Enter or Space), the same as the Calendar colors. Each has "Reset"; "Reset colors" clears them all; a sample strip shows the result before you press Apply. Colors you did not change follow from the others (hover, active fill, faint frame, bottom line, tooltip). The defaults are the same flat dark bar with a muted blue frame (the bar background blended 55 % toward the panel blue).
+- Settings: the Bar tab follows the Apply rule: nothing changes until you press Apply. "Revert to defaults" does not touch the bar; "Factory settings" puts the bar boxes back to their defaults (bar off), and Apply makes it so. If Windows refuses the strip, the bar is not shown, nothing is saved and a note says so.
+- TEST mode: the bar is drawn (with a "(TEST)" mark) but no screen space is reserved and Windows is not asked for anything.
+- config.json gets a new "bar" section (`enabled` is false by default; `info`: `enabled`, `time_format`, `show_date`; `colors`: only the colors you changed: `background`, `button`, `border`, `text`, `active`, each `#rrggbb`); an older config.json without it keeps working and looks like the defaults.
+
+### Open windows
+- The bar lists your open windows, left to right, one button each (icon + title), like the Windows taskbar. Settings > Bar > "Show open windows" turns the list on or off (on by default once the bar is on).
+- Which windows: the ones the taskbar would show (visible, not tool windows or dialogs of other windows, not hidden apps), and never M Panels' own windows. Apps that Windows keeps hidden until they are shown (such as Calculator) appear when they are shown. Programs pinned to the taskbar but not running do not appear.
+- Order: by when the program was started; a window you open later goes to the end, and buttons never move while you work.
+- Looks: buttons are 26 px high with 4 px between them, 180 px wide at most, and shrink to share the room, down to icon-only at 40 px; a long title ends with "…" and the full title shows in a tooltip. When there is no more room the last button is "+N" and its menu lists the rest. Each button has a thin (1 px) rounded frame, built like the panels' corners. The active window has an accent-colored frame and a lighter fill; a button under the pointer lights up; a minimized window has a faint frame, a dim title and a faded icon (so it is still visible without a title). The date and time stay on the right.
+- Settings > Bar > "Show window titles" (under "Show open windows"): off = icons only. Every button is then 32 px wide, the full title shows in the tooltip, and more windows fit before "+N". A window without an icon of its own gets a tile with the first letter of its title (the plain icon if the title is empty).
+- Icons come from the window itself, else from its program; if neither can be found a plain icon is shown and the search is repeated. For a packaged app (Windows Terminal and similar) the program's own icon is used first, as the taskbar does; other programs keep the window's icon first.
+- Click a button to bring its window forward; click the active window's button to minimize it; click a minimized window's button to restore it and bring it forward (like the taskbar). The rows of the "+N" menu do the same.
+- The window that was active is noted when the mouse goes down, so the bar and its menus cannot confuse "is it already active?". The bar never takes focus when clicked.
+- If Windows refuses (for example a window of a program running as administrator), nothing is shown; a line is written to the log. A log file that cannot be written never disturbs the bar.
+- Known limit: a window of a program running as administrator can be brought forward, but it cannot be minimized or restored from the bar (Windows does not allow it from a normal program). Only a log line is written.
+- The bar's menus (right-click, and the "+N" list) close with Escape or a click outside, and do not leave the bar thinking it was the active window. Before a menu opens the bar takes the foreground (Windows needs that to close a menu properly); the window that was active is remembered (never one of M Panels' own windows) and, when the menu closes without a choice, it gets the foreground back. Choosing "Settings…" or a "+N" row leaves the foreground to that choice. The same works with "Show open windows" off (the window that was active is read when you right-click).
+- "Close window" (right-click on a window button; the "+N" list has no Close) asks that window to close, the same request as its X button (WM_CLOSE posted to it), so a program with unsaved work can still ask what to do. No process is ever ended. The button leaves the list by itself when Windows reports the window gone (it is not removed by hand).
+- "Close window" counts as a command: the foreground is left to the window you asked (the previous window is not given the foreground back). If the window is already gone, or Windows refuses (a program running as administrator), nothing is shown; one line goes to the log.
+- Changes are noticed at once (Windows window events), and a check every 2 seconds catches anything missed. With the bar off nothing is installed or watched.
+- The bar's message window was tested with 64-bit message parameters (as Windows sends them for some window events); no fault was found, and a test keeps it that way. The window hooks are removed, and the helper thread has ended, before M Panels exits.
+- TEST mode: a made-up list is shown and nothing is installed; clicks are only recorded, no real window is touched.
+- config.json: `bar.tasks` with `enabled` (true by default) and `show_titles` (true by default). An older config.json without them keeps working and looks like the defaults.
+
+### Search
+- New: a search button at the left end of the bar (Settings > Bar > Search > "Show search button", on by default). Click it, or press the shortcut key, to open a small window under the button: type a name and the best programs show below (up to 8 rows). Enter starts the selected row (the first by default), a click on a row starts it, the arrow keys move the selection, Esc closes the window and gives the focus back to the window you were in. Clicking another window closes it without taking the focus back. Clicking the button again closes it; a quick double-click does not open it again.
+- Programs come from the same list as the Start menu's "All apps" (Windows' shell:AppsFolder), so Store apps are included. If that list cannot be read, the shortcuts of the Start menu folders are used instead (the Startup folder is left out) and a line goes to the log. Two different programs with the same name both show, with a short gray hint (the folder or package) to tell them apart. The list is read in the background when M Panels starts and again, in the background, when the window opens and the list is older than 30 seconds; the window never waits for it.
+- Matching ignores case and accents and treats the four forms of the Turkish letter i (dotted and dotless, capital and small) as one letter, so typing the plain letters finds Turkish names. Order: whole name, start of the name, start of a word, initials ("vsc" finds Visual Studio Code), anywhere in the name; then the shorter name, then alphabetical.
+- Settings > Bar > Search: "Show search button", "Shortcut key" (Off, Win+Alt+Space or Ctrl+Shift+Space; Alt+Space and Ctrl+Space are not offered), "Include Store apps" (on), "Show 'Search Windows' row" (off). With the last one on, the last row "Search Windows for '`<text>`'" closes the window, opens Windows Search with Win+S and types the text there (if Windows Search does not take the focus within about a second, the text is not typed and a line goes to the log).
+- If Windows does not accept the shortcut key (another program has it), Apply shows a warning and changes nothing. The key is released when it is turned off, when the search button or the bar is turned off, and when M Panels quits.
+- If a program cannot be started (for example it was uninstalled), a short note appears in the window and the window stays open; one line goes to the log.
+- config.json: `bar.search` with `enabled`, `hotkey` (`off`, `win+alt+space`, `ctrl+shift+space`), `store_apps`, `windows_row`; only values that differ from the defaults are written. An older config.json without it keeps working.
+- TEST mode: the list is read (read only), but nothing is started, no key is sent and no shortcut key is registered.
+- Known limits: programs of the Store show a generic icon with a letter (their own logo cannot be read this way); the typing into Windows Search could not be tried by automatic tests.
+
+### Start button
+- New: a Start button at the very left of the bar (Settings > Bar > "Show Start button", on by default): four flat colored tiles (blue, green, orange, purple; no frame, no dark background), 28 px, centered in its 32 px place (2 px from the edge of the bar on the left, top and bottom). Click it to open the Windows Start menu, click it again to close it (the button presses the Win key once; Windows decides whether that opens or closes the menu). A quick double-click acts only once. If the search window is open, a click on Start closes it first and does not give the focus back to the earlier window. The whole Start place from the left edge of the screen, top to bottom, is clickable (throw the mouse into the corner). The icon gets a little brighter when the pointer is on it. If the icon cannot be drawn, nine dots are shown instead. The button has no "pressed" look while the Start menu is open.
+- Spacing: the Start place is 32 px wide, the search button follows 4 px later, and the window buttons 4 px after it (the same gap as between window buttons). The left end of the bar is 72 px.
+- The tray icon (next to the clock) is the same four tiles, drawn at exactly the size Windows shows it (16 px here), with no frame. The program icon file, the shortcuts and the About window keep the old look.
+- When the button is off its place (the first 32 px) stays empty: the search button and the window buttons do not move.
+- config.json: `bar.start` with `enabled`; written only when it is off. An older config.json without it keeps working (the button is on).
+- TEST mode: the button is drawn, but no key is sent.
+- Known limit: Windows opens its Start menu at the bottom left of the screen (the taskbar is at the bottom), not under the bar.
+
+### Help and About
+- Help now covers everything added since 1.1.1: the bar (turn on, colors, date and time), open windows (click, Close window, +N), search (shortcut keys, matching, the Search Windows row), the Start button, snapping and stacks, several monitors, calendar settings, and a "Known limitations" section. The "Nothing is ever permanently deleted" sentence now says what is true: your files and notes are never deleted by the program, only the oldest settings backups are.
+- Help: "What M Panels does" explains using panels only, the bar only, or both.
+- About: under the version it now shows the license and the project page as plain text.
+
+### General
+- The first-start panel is now made only the very first time (when there is no config.json) and is called "Sample" (it was "General"). Later starts never make a panel, so M Panels can run with no panels at all (for example only the bar). Panels already named "General" are not touched.
+- Fix: with no panel, Settings > Revert to defaults and Factory settings did nothing; they now reset the General, Snapping and (Factory settings) Bar boxes.
+- Settings: General is now the first tab and is the one shown when Settings opens. The Calendar tab (calendar panels only) sits between Content and Bar. The contents of the tabs did not change.
+- Settings > Calendar, list of calendars: the color is now a small colored square at the start of each row instead of the code (#rrggbb). Click the square to pick a new color for that calendar; a double-click on the row still opens the edit window. A calendar without its own color shows the color the panel really uses for it, with a short dash in the square. Nothing changes until you press Apply.
+
 ## 1.1.1 — 2026-11-23
 
 ### Calendar
@@ -11,6 +74,7 @@ Newest first. The About tab in Settings reads this file; the current version (ve
 - The addresses are stored in config.json (and so also in the automatic backups). They are never written to mpanels.log, error messages, window titles or tooltips, and "Make current Calendar look the default" and config.example.json never contain them.
 
 ### General
+- First public release.
 - Preparation for publishing the source: MIT license (LICENSE), a new README, a stricter .gitignore (virtual environments, logs, backups, launchers), no personal folder names in code, comments or tests, and a requirements.txt note for Python 3.12 in a venv.
 - The program icon now comes from the bundled assets\m_panels.ico; a separate icon file outside the program folder is no longer used.
 

@@ -33,7 +33,8 @@ import winutil  # noqa: E402
 # theme.py is allowed to hold literals (colors, font names; tests/test_v3.py guards the opposite direction)
 AUDITED = ["mpanels", "fileops", "uiwidgets", "winutil", "deskicons", "richtext", "notefmt", "kur", "applog",
            "calendar_panel/__init__", "calendar_panel/core", "calendar_panel/source", "calendar_panel/model",
-           "calendar_panel/settings", "calendar_panel/view", "changelog"]
+           "calendar_panel/settings", "calendar_panel/view", "changelog",
+           "appbar", "shellmsg", "infoclock", "barwin", "tasks", "winhooks", "search", "searchwin", "startmenu"]
 TURKISH = "ğüşöçıİĞÜŞÖÇ"
 
 # String constants that are NOT user-visible text. Everything else in code must come from strings.py.
@@ -61,6 +62,16 @@ TECHNICAL_EXACT = {
     # drag/snap diagnostics in mpanels.log (technical, English by design)
     "display layout changed: %d monitor(s) %s", "display check failed", "monitor layout could not be read; keeping the last known one",
     "drag press panel=%s xy=%s,%s moving=on", "release panel=%s xy=%s,%s moving_was=%s", "drop decision: lost_release=%s cancelled=%s locked=%s snap_enabled=%s snap_preview=%s candidate=%s preview_shown=%s event_xy=%s,%s panel_rect=%s", "1x1+0+0", "preview show box=%s", "drop_snap panel=%s choose_drop=%s", "press while an earlier drag was still open (release lost): finishing it first, panel=%s", "button already up while dragging (release lost): ending the drag, panel=%s", "motion with the button up (release lost): ending the drag, panel=%s", "drag start panel=%s held-check follows", "preview hide", "drag cancelled with Esc: restoring the layout of the press, panel=%s",
+    # bar (v1.2): log lines and Windows names, developer-facing
+    'bar is on in config.json but could not be shown; it stays on in the file', 'bar refresh failed', 'bar message failed', 'appbar: registered rect=%s', 'appbar: moved rect=%s', 'appbar: removed', 'appbar: ABM_NEW refused', 'appbar: register failed: %r', 'appbar: reposition failed: %r', 'appbar: remove failed: %r', 'MPanelsBarCallback', 'TaskbarCreated', 'MPanelsBarWindow%d_%d', 'bar: on (%s) rect=%s', 'bar: off', '%dx%d+%d+%d', 'bar: no owner window; the bar is not shown', 'bar: could not reserve space; the bar is not shown', 'TEST: nothing reserved', 'space reserved', 'bar: Explorer restarted; registering again', 'bar: full-screen app %s', 'bar: press failed', 'bar: click failed', 'tasks: could not bring window %d forward (%s)', 'tasks: click failed', 'bar pump failed', 'tasks: switching the hooks failed', 'tasks: the window hooks could not be installed', 'tasks: the message window did not stop in time', '+%d+%d', 'tasks: no window events; the list follows the 2 s comparison only', 'ApplicationFrameWindow', 'Windows.UI.Core.CoreWindow', 'WinInfo', 'hwnd title pid cls visible owner ex cloaked iconic shell', 'Entry', 'hwnd title minimized path', 'View', 'entries active icon_of', 'bar: look changed (%d own colors, titles %s)', 'tasks: could not ask window %d to close', 'tasks: close request failed', 'bar: right click failed', 'bar: close failed', 'BarForm', 'enabled info_on time_format show_date tasks_on show_titles colors', 'entries active icon_of dim_of has_icon', 'FakeWindow', 'fake/app%d.exe', 
+    # Start icon / tray icon (v1.2 step 5 extra): log lines
+    'bar: the Start icon could not be made; drawing the dots', 'tray: could not load the icon at its exact size; the stock pystray loading is used',
+    # bar menus / foreground (v1.2 step 3b): log lines
+    'tree headings',          # a Treeview option (v1.2 step 3e), not UI text
+    # search (v1.2 step 4): log lines, Windows names, technical keys
+    r'^[A-Za-z]:\\', r'[\W_]+', '<error', r'^(\{[0-9A-Fa-f\-]{36}\})\\(.+)$',
+    'enabled info_on time_format show_date tasks_on show_titles colors search_on hotkey store_apps windows_row start_on', 'start: the Win key could not be released', 'start: click ignored (inside the double-click time of the previous click)', 'start: closing the search window failed', 'start: Win key sent', 'start: click failed', 'start button', 'win+alt+space', 'ctrl+shift+space', 'shell:AppsFolder\\', 'shell:AppsFolder', 'Entry', 'name parsing kind hint store folded', 'search-scan', 'search-icons', 'utf-16-le', 'search: the scan failed', 'search: shell:AppsFolder failed (%s); using the Start Menu shortcuts', 'search: shell:AppsFolder gave no entries; using the Start Menu shortcuts', 'search: a Start Menu folder could not be found', 'search: the Win key could not be released', 'search: RegisterHotKey failed (error %s)', 'search: switching the shortcut key failed', 'search: shortcut key %s%s', ' (TEST mode: not registered)', 'search: could not register the shortcut key %s', 'search: opened; window to give back: %d', 'search: opening failed', 'search: closed (%s); foreground given back: %s', 'search: giving the foreground back failed', 'search: click ignored (inside the double-click time of the click that closed the window)', 'search: button click failed', 'search: shortcut key failed', 'search: could not start an entry (%s, winerror %s)', 'search: started an entry (%s)', 'search: activating a row failed', 'search: Windows Search did not take the foreground within %d ms; the text was not typed', 'search: waiting for Windows Search failed', 'search: typing into Windows Search failed', 'search: Win+S failed', 'search: drawing failed', 'search stopped', 'search button', 'shortcut key', 'Search Windows', 'focus lost', 'started', 'Esc', 'hover', 'windows', 'app', 'lnk', 'appsfolder',
+    'bar: menu opens; window to give back: %d; bar took the foreground: %s', 'bar: preparing the menu failed', 'bar: menu closed with a command; the foreground is left to it', 'bar: giving the foreground back failed', 'tasks: previous window lookup failed', 'tasks: menu closed; foreground stays with %d', 'tasks: menu closed; foreground %d -> %d (%s)', 'given back', 'window gone', 'tasks: giving the foreground back failed',
 }
 TECHNICAL_PATTERNS = [
     re.compile(r"^<.+>$"),                    # Tk event sequences
@@ -492,7 +503,10 @@ class TestPromptDialog(unittest.TestCase):
 
 class TestVersion4(unittest.TestCase):
     def test_surum(self):
-        self.assertEqual(version.__version__, "1.1.1")
+        with open(os.path.join(ROOT, "version.py"), encoding="utf-8") as f:       # no hard-coded number: version.py is the source
+            m = re.search(r'(?m)^__version__\s*=\s*"(\d+\.\d+\.\d+)"', f.read())
+        self.assertIsNotNone(m)
+        self.assertEqual(version.__version__, m.group(1))
 
     def test_pencere_basligi_ve_tepsi_metni_stringsten(self):
         self.assertEqual(strings.SET_TITLE.format(app=strings.APP_NAME, version="0.5.2"), "M Panels v0.5.2 — Settings")

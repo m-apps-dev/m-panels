@@ -10,6 +10,7 @@ import argparse
 import atexit
 import copy
 import ctypes
+import collections
 import ctypes.wintypes
 import hashlib
 import json
@@ -28,16 +29,23 @@ from tkinter import colorchooser, filedialog, messagebox, ttk
 
 from PIL import Image, ImageDraw, ImageTk
 
+import appbar
 import applog
 import backup
+import barwin
 import calendar_panel
 import changelog
 import deskicons
 import displays
 import fileops
+import infoclock
 import richtext
+import search
+import searchwin
+import startmenu
 import stack
 import strings as ui
+import tasks
 import theme
 import uiwidgets
 import winutil
@@ -58,8 +66,35 @@ except Exception:
     HAS_TRAY = False
 
 APP_NAME = ui.APP_NAME
+
+
+def make_tray_icon(name, size, tip, menu):
+    """The tray icon: theme.tile_icon drawn at exactly `size` (SM_CXSMICON). pystray itself loads the icon it saves with
+    LR_DEFAULTSIZE, i.e. always as a 32 px icon (measured: even a 16 px image comes back 32x32), and Windows then shrinks that
+    to 16 - so the Windows 11 tray would get a stretched-and-shrunk picture. The subclass loads the frame of exactly `size`.
+    If pystray's private pieces are not there (another version) the stock behavior stays."""
+    icon = pystray.Icon(name, theme.tile_icon(size), tip, menu)
+    try:
+        from pystray._util import serialized_image
+        from pystray._util import win32 as _w32
+
+        def exact_handle():
+            if icon._icon_handle:
+                return
+            with serialized_image(icon.icon, "ICO") as path:
+                icon._icon_handle = _w32.LoadImage(None, path, _w32.IMAGE_ICON, size, size, _w32.LR_LOADFROMFILE)
+        icon._assert_icon_handle = exact_handle
+    except Exception:                                    # noqa: BLE001
+        LOG.warning("tray: could not load the icon at its exact size; the stock pystray loading is used", exc_info=True)
+    return icon
 HARD_EXIT_SECONDS = 5          # Quit watchdog: the process is force-ended if it is still alive after this
 # Preset colors with their display names (the names live in strings.py, the hex values in theme.py)
+BarForm = collections.namedtuple("BarForm", "enabled info_on time_format show_date tasks_on show_titles colors "
+                                 "search_on hotkey store_apps windows_row start_on",
+                                 defaults=(True, search.DEFAULT_HOTKEY, True, False, True))
+# the Bar tab's boxes; colors = 5 values, "" = not changed by the user
+
+
 PRESETS = [(ui.COLOR_NAMES[k], hexv) for k, hexv in theme.PRESETS]
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
 ASSETS = os.path.join(APP_DIR, "assets")
@@ -1157,7 +1192,9 @@ class PanelWin:
 # ------------------------------------------------------------------ application
 class App:
     def __init__(self, ctx, data_dir, test_mode=False, use_tray=True, icon_backend=None, instance_name=None,
-                 displays_provider=None, clock=None):
+                 displays_provider=None, clock=None, appbar_backend=None, bar_shell=None, bar_window=None,
+                 wall_clock=None, tasks_source=None, tasks_actions=None, search_source=None, search_actions=None,
+                 search_spawn=None, start_actions=None):
         self.ctx, self.test_mode = ctx, test_mode
         self.displays = displays_provider or displays.Displays()     # the screens (tests give a made-up layout)
         self.clock = clock or time.monotonic
@@ -1168,6 +1205,7 @@ class App:
         os.makedirs(data_dir, exist_ok=True)
         self.config_path = os.path.join(data_dir, "config.json")
         self.defaults_path = os.path.join(data_dir, "defaults.json")
+        first_run = not os.path.exists(self.config_path)        # the sample panel is made only now, never again
         backup.make_backup(self.config_path)            # first thing after reading: before any placement, clamp or save
         self.cfg = load_json(self.config_path, {})
         g = self.cfg.setdefault("general", {})
@@ -1176,6 +1214,19 @@ class App:
         g.setdefault("hide_desktop_icons", False)
         g.setdefault("hide_icons_restore", None)
         stack.sanitize_general(g)                       # snap_distance, stack_gap, snap_enabled (v1.1 step 7a)
+        self.cfg["bar"] = infoclock.sanitize(self.cfg.get("bar"))     # v1.2: off unless the file says so
+        self.bar = None                                 # None = no bar: no window, no thread, no timer, no AppBar call
+        self.wall_clock = wall_clock or datetime.now    # the bar's clock (tests give a made-up one)
+        self._appbar_backend, self._bar_shell, self._bar_window = appbar_backend, bar_shell, bar_window
+        self._tasks_source = tasks_source               # tests give a made-up window list...
+        self._tasks_actions = tasks_actions             # ...and a recorder instead of the real click actions
+        self._search_source = search_source             # tests give a made-up program list...
+        self._search_actions = search_actions           # ...a recorder instead of the real launcher / SendInput...
+        self._search_spawn = search_spawn               # ...and a synchronous "thread"
+        self.search_actions = None                      # the actions object the running search uses (tests look at it)
+        self._start_actions = start_actions             # tests give a recorder instead of the real SendInput
+        self.start_actions = None                       # the actions object the running Start button uses (tests look at it)
+        self.bar_failure = ""                           # why the last apply_bar() said False: "bar" or "search"
         self.cfg.setdefault("panels", {})
         self.cfg["stacks"] = self.cfg["stacks"] if isinstance(self.cfg.get("stacks"), list) else []
         self._relaying = False
@@ -1209,7 +1260,7 @@ class App:
             pass
 
         fileops.ensure_panels_root(ctx)
-        if not fileops.list_panel_folders(ctx):
+        if first_run and not fileops.list_panel_folders(ctx):
             fileops.create_panel(ctx, ui.DEFAULT_PANEL_NAME)
         self.watcher = Watcher(self.q.put)
         self.watcher.start()
@@ -1226,6 +1277,151 @@ class App:
         self.root.after(700, self.migrate_calendar_sources)
         self.icons.startup()
         atexit.register(self.icons.on_quit)     # on a normal exit (tray Quit included) the icons return to normal
+        if self.cfg["bar"]["enabled"] and not self.start_bar():
+            LOG.warning("bar is on in config.json but could not be shown; it stays on in the file")
+
+    # ------------------------------------------------------------ bar (v1.2 step 1)
+    def _make_bar(self):
+        # TEST mode never gets the real backend: the bar is drawn, nothing is reserved (the real work area stays alone).
+        backend = appbar.NullAppBar() if self.test_mode else (self._appbar_backend or appbar.Win32AppBar())
+        if self._bar_shell is not None:
+            shell = self._bar_shell(self.q.put)
+        else:
+            import shellmsg
+            shell = shellmsg.MessageWindow(self.q.put)
+        kw = {"window_factory": self._bar_window} if self._bar_window else {}
+        return barwin.Bar(self.root, self.cfg["bar"]["info"], backend, shell, self._fresh_monitors, self.wall_clock,
+                          self._open_bar_settings, self.popup, self._displays_now, self.test_mode,
+                          tasks_cfg=self.cfg["bar"]["tasks"], tasks_factory=self._make_tasks,
+                          keeper_factory=self._make_keeper, colors=self.cfg["bar"]["colors"],
+                          search_cfg=self.cfg["bar"]["search"], search_factory=self._make_search,
+                          start_cfg=self.cfg["bar"]["start"], start_factory=self._make_start, **kw)
+
+    def _make_tasks(self, on_change):
+        """The Tasks controller. TEST mode: a made-up list (no EnumWindows, no hook). Real mode: the real source."""
+        source = self._tasks_source or (tasks.FakeSource() if self.test_mode else tasks.Win32Source())
+        loader = tasks.IconLoader(source.fetch_icon, self.q.put)
+        actions = self._tasks_actions or (tasks.FakeActions() if self.test_mode else tasks.Win32Actions())
+        return tasks.Tasks(source, loader, on_change, own_pid=os.getpid(), actions=actions, schedule=self.root.after)
+
+    def _make_keeper(self):
+        """Bar menus with "Show open windows" off: only the foreground read/give back (TEST mode: the made-up pair)."""
+        source = self._tasks_source or (tasks.FakeSource() if self.test_mode else tasks.Win32Source())
+        actions = self._tasks_actions or (tasks.FakeActions() if self.test_mode else tasks.Win32Actions())
+        return tasks.ForegroundKeeper(source, actions)
+
+    def _make_search(self, bar):
+        """The search controller. TEST mode: the list is read (read only) but nothing is started, sent or registered:
+        the made-up actions only record."""
+        sources = self._search_source or search.Win32Sources()
+        actions = self._search_actions or (search.FakeSearchActions() if self.test_mode else search.SearchActions())
+        self.search_actions = actions
+        index = search.Index(sources, self.clock, self._search_spawn or search.thread_spawn,
+                             lambda result: self.q.put(("bar", ("scan", result))))
+        icons = search.IconWorker(search.real_icon, self.q.put, theme.SEARCH_ICON)
+        return searchwin.Search(self.root, self.cfg["bar"]["search"], index, actions, bar, self.clock, icons=icons)
+
+    def _make_start(self, bar):
+        """The Start button's controller. TEST mode: the made-up actions only record (no key is sent)."""
+        actions = self._start_actions or (startmenu.FakeStartActions() if self.test_mode else startmenu.StartActions())
+        self.start_actions = actions
+        return startmenu.Start(actions, self.clock, bar.close_search)
+
+    def _open_bar_settings(self):
+        """The bar's right-click menu: Settings, on the Bar tab."""
+        self.open_settings()
+        if self.settings_win is not None and self.settings_win.win.winfo_exists():
+            self.settings_win.show_tab("bar")
+
+    def _fresh_monitors(self):
+        return self.displays.probe() or self.displays.monitors()
+
+    def start_bar(self):
+        """Show the bar (register, draw). False and nothing left behind when that fails."""
+        if self.bar is not None:
+            return True
+        bar = self._make_bar()
+        if not bar.start():
+            return False
+        self.bar = bar
+        self._displays_now()
+        return True
+
+    def stop_bar(self):
+        if self.bar is None:
+            return
+        bar, self.bar = self.bar, None
+        bar.stop()
+        self._displays_now()
+
+    def apply_bar(self, enabled, info, tasks_cfg=None, colors=None, search_cfg=None, start_cfg=None):
+        """Settings > Apply for the Bar tab. False (and nothing changed or written) when the bar could not be shown or the
+        search shortcut key could not be registered; `bar_failure` then says which ("bar" / "search")."""
+        cfg = self.cfg["bar"]
+        old = copy.deepcopy(cfg)
+        self.bar_failure = ""
+        cfg["info"].update(infoclock.sanitize({"info": info})["info"])           # same dict object the Bar reads
+        if tasks_cfg is not None:
+            cfg["tasks"].update(infoclock.sanitize({"tasks": tasks_cfg})["tasks"])
+        if search_cfg is not None:
+            cfg["search"].update(search.sanitize({**cfg["search"], **search_cfg}))   # same dict object the Bar reads
+        if start_cfg is not None:
+            cfg["start"].update(startmenu.sanitize({**cfg["start"], **start_cfg}))   # same dict object the Bar reads
+        if colors is not None:
+            cfg["colors"].clear()                                                # same dict object the Bar reads
+            cfg["colors"].update(infoclock.sanitize_colors(colors))
+        cfg["enabled"] = bool(enabled)
+
+        def restore():
+            cfg["enabled"] = old["enabled"]
+            for k in ("info", "tasks", "colors", "search", "start"):
+                cfg[k].clear()
+                cfg[k].update(old[k])
+        if cfg["enabled"] and self.bar is None:
+            if not self.start_bar():
+                restore()
+                self.bar_failure = "bar"
+                return False
+        elif not cfg["enabled"] and self.bar is not None:
+            self.stop_bar()
+        if self.bar is not None:
+            self.bar.set_info(cfg["info"])
+            self.bar.set_tasks(cfg["tasks"])
+            self.bar.set_start(cfg["start"])
+            if cfg["colors"] != old["colors"]:
+                self.bar.set_colors(cfg["colors"])
+            if not self.bar.set_search(cfg["search"]):          # the shortcut key could not be registered
+                restore()
+                self.bar_failure = "search"
+                if not old["enabled"]:
+                    self.stop_bar()                             # the bar was started by this Apply: take it back
+                else:
+                    self.bar.set_info(cfg["info"])
+                    self.bar.set_tasks(cfg["tasks"])
+                    self.bar.set_start(cfg["start"])
+                    self.bar.set_colors(cfg["colors"])
+                    self.bar.set_search(cfg["search"])          # back to the old state (the old key)
+                return False
+        if cfg != old:
+            self.save()
+        return True
+
+    def _displays_now(self):
+        """The work area just changed because of the bar: look at the screens NOW instead of waiting for the 2 s poll
+        and the 3 s settle time. Panels are only SHOWN elsewhere; their homes (and config.json) are not touched."""
+        probed = self.displays.probe()
+        if probed is None:
+            return
+        self._disp_seen, self._disp_seen_at = displays.signature(probed), self.clock() - DISPLAY_SETTLE_S - 1
+        try:
+            self._display_check()
+        except Exception:                                   # noqa: BLE001
+            LOG.exception("display check failed")
+
+    def _quit_bar(self):
+        if self.bar is not None:
+            bar, self.bar = self.bar, None
+            bar.stop()                                      # ABM_REMOVE: os._exit() skips atexit, so it is done here
 
     @property
     def locked(self):
@@ -1310,6 +1506,14 @@ class App:
         the place it is SHOWN at right now (that depends on the monitors that exist at the moment). Stack members are
         saved at their SETTLED place derived from the top's home (not mid-animation). The live cfg is not touched."""
         data = dict(self.cfg)
+        bar = dict(self.cfg["bar"])                 # bar.search / bar.start: only what differs from the defaults is written
+        for key, mod in (("search", search), ("start", startmenu)):
+            diff = mod.differences(bar.get(key))
+            if diff:
+                bar[key] = diff
+            else:
+                bar.pop(key, None)
+        data["bar"] = bar
         settled = self._settled_stack_cfg()
         panels = {}
         for name, c in self.cfg["panels"].items():
@@ -2135,7 +2339,7 @@ class App:
             pystray.MenuItem(ui.TRAY_QUIT, lambda i, it: put(("cmd", "quit"))),
         )
         tip = ui.VERSION_LINE.format(app=APP_NAME, version=__version__) + (f" {ui.TEST_TAG}" if self.test_mode else "")
-        self.tray = pystray.Icon("MPanels", app_icon_image(64), tip, menu)
+        self.tray = make_tray_icon("MPanels", winutil.small_icon_size(), tip, menu)
         threading.Thread(target=self.tray.run, daemon=True).start()
 
     def _poll(self):
@@ -2163,8 +2367,19 @@ class App:
                     p = self.panels.get(val)
                     if p is not None and p.expanded:
                         p.draw_body()
+                elif kind == "bar":
+                    if self.bar is not None:                # messages that arrive after the bar went are ignored
+                        try:
+                            self.bar.handle(val)
+                        except Exception:                   # noqa: BLE001  (a bar fault must not stop the queue)
+                            LOG.exception("bar message failed")
         except queue.Empty:
             pass
+        if self.bar is not None:
+            try:
+                self.bar.pump()                             # the window list: one scan if the hooks reported a change
+            except Exception:                               # noqa: BLE001
+                LOG.exception("bar pump failed")
         self.root.after(150, self._poll)
 
     def _fs_flush(self):
@@ -2185,6 +2400,11 @@ class App:
                     p.reload_items()
         for p in self.panels.values():
             p.cal_tick()
+        if self.bar is not None:
+            try:
+                self.bar.refresh()                          # the clock's safety net (no message needed)
+            except Exception:                               # noqa: BLE001
+                LOG.exception("bar refresh failed")
         self.root.after(2000, self._tick)
 
     def show_all(self, on):
@@ -2211,6 +2431,7 @@ class App:
             lambda: [p.save_note() for p in self.panels.values()],
             self.save,
             self.icons.on_quit,                 # desktop icons back to normal (does nothing in TEST mode)
+            self._quit_bar,                     # ABM_REMOVE, before root.destroy
             lambda: setattr(self.watcher, "stop_flag", True),
             lambda: self._listener.stop() if self._listener is not None else None,
             lambda: self._quit_listener.stop() if self._quit_listener is not None else None,
@@ -2278,15 +2499,16 @@ class NewPanelDialog:
 
 # ------------------------------------------------------------------ settings window
 class SettingsWindow:
-    """Tabbed settings: Panel · Title · Content · General, with shared buttons at the bottom (Apply, defaults...).
+    """Tabbed settings: General · Panel · Title · Content (· Calendar) · Bar · About, with shared buttons at the bottom (Apply, defaults...).
     Rule: NOTHING changes until 'Apply' (the General checkboxes included). Closing with X or switching panel
     while something is unapplied asks 'Unsaved changes - Apply / Discard / Cancel'. Only 'Revert to defaults' and
     'Factory settings' act at once, after a confirmation.
     This is the one window that shows in the taskbar while it is open."""
 
     # (key, label): code uses the keys, the user sees the labels
-    TABS = (("panel", ui.TAB_PANEL), ("title", ui.TAB_TITLE), ("content", ui.TAB_CONTENT),
-            ("calendar", ui.TAB_CALENDAR), ("general", ui.TAB_GENERAL), ("about", ui.TAB_ABOUT))
+    TABS = (("general", ui.TAB_GENERAL), ("panel", ui.TAB_PANEL), ("title", ui.TAB_TITLE),
+            ("content", ui.TAB_CONTENT), ("calendar", ui.TAB_CALENDAR), ("bar", ui.TAB_BAR),
+            ("about", ui.TAB_ABOUT))
 
     # Calendar tab, Day/Week look + fading: (form variable, label, lo, hi, settings key)
     CAL_LOOK_FIELDS = (("cal_start", ui.LBL_CAL_START_HOUR, 0, 23), ("cal_end", ui.LBL_CAL_END_HOUR, 1, 24),
@@ -2321,6 +2543,18 @@ class SettingsWindow:
         self.v_snap_dist = tk.StringVar(value=str(app.cfg["general"]["snap_distance"]))
         self.v_stack_gap = tk.StringVar(value=str(app.cfg["general"]["stack_gap"]))
         self.color = theme.DEFAULT_COLOR
+        self.bar_tf_labels = {"24h": ui.BAR_TIME_24, "12h": ui.BAR_TIME_12}
+        bar0 = self._bar_applied()
+        self.v_bar, self.v_bar_info = tk.BooleanVar(value=bar0.enabled), tk.BooleanVar(value=bar0.info_on)
+        self.v_bar_tf = tk.StringVar(value=self.bar_tf_labels[bar0.time_format])
+        self.v_bar_date = tk.BooleanVar(value=bar0.show_date)
+        self.v_bar_tasks, self.v_bar_titles = tk.BooleanVar(value=bar0.tasks_on), tk.BooleanVar(value=bar0.show_titles)
+        self.search_hk_labels = {k: ui.SEARCH_HOTKEY_LABELS[k] for k in search.HOTKEYS}      # key -> label, in list order
+        self.v_search, self.v_search_hk = tk.BooleanVar(value=bar0.search_on), tk.StringVar(value=self.search_hk_labels[bar0.hotkey])
+        self.v_search_store, self.v_search_win = tk.BooleanVar(value=bar0.store_apps), tk.BooleanVar(value=bar0.windows_row)
+        self.v_bar_start = tk.BooleanVar(value=bar0.start_on)
+        self.bar_colors = {}                                  # the colors in the boxes (only the changed ones)
+        self._sample_imgs = []
 
         top = ttk.Frame(f)
         top.pack(fill="x")
@@ -2398,6 +2632,58 @@ class SettingsWindow:
             self.cb_hide.state(["disabled"])
             ttk.Label(g, text=ui.TEST_MODE_NOTE).pack(anchor="w", pady=(6, 0))
 
+        # --- Bar tab (v1.2): nothing is applied before Apply, like everything else here
+        bt = self.tab["bar"]
+        self.cb_bar = ttk.Checkbutton(bt, text=ui.CHK_BAR_SHOW, variable=self.v_bar)
+        self.cb_bar.pack(anchor="w", pady=2)
+        self.cb_bar_start = ttk.Checkbutton(bt, text=ui.CHK_START_SHOW, variable=self.v_bar_start)
+        self.cb_bar_start.pack(anchor="w", padx=(22, 0), pady=(6, 0))
+        bi = ttk.Frame(bt)
+        bi.pack(anchor="w", padx=(22, 0), pady=(6, 0))
+        self.cb_bar_info = ttk.Checkbutton(bi, text=ui.CHK_BAR_INFO, variable=self.v_bar_info)
+        self.cb_bar_info.grid(row=0, column=0, columnspan=3, sticky="w", pady=2)
+        ttk.Label(bi, text=ui.LBL_BAR_TIME_FORMAT).grid(row=1, column=0, sticky="w", padx=(22, 6), pady=2)
+        self.cb_bar_tf = ttk.Combobox(bi, textvariable=self.v_bar_tf, state="readonly", width=9,
+                                      values=list(self.bar_tf_labels.values()))
+        self.cb_bar_tf.grid(row=1, column=1, sticky="w", pady=2)
+        self.cb_bar_date = ttk.Checkbutton(bi, text=ui.CHK_BAR_DATE, variable=self.v_bar_date)
+        self.cb_bar_date.grid(row=1, column=2, sticky="w", padx=(14, 0), pady=2)
+        self.cb_bar_tasks = ttk.Checkbutton(bt, text=ui.CHK_BAR_TASKS, variable=self.v_bar_tasks)
+        self.cb_bar_tasks.pack(anchor="w", padx=(22, 0), pady=(6, 0))
+        self.cb_bar_titles = ttk.Checkbutton(bt, text=ui.CHK_BAR_TITLES, variable=self.v_bar_titles,
+                                             command=self._draw_bar_sample)
+        self.cb_bar_titles.pack(anchor="w", padx=(44, 0), pady=(2, 0))
+        bs = ttk.LabelFrame(bt, text=ui.LBL_SEARCH)
+        bs.pack(anchor="w", fill="x", pady=(10, 0))
+        self.cb_search = ttk.Checkbutton(bs, text=ui.CHK_SEARCH_SHOW, variable=self.v_search)
+        self.cb_search.grid(row=0, column=0, columnspan=2, sticky="w", padx=8, pady=2)
+        ttk.Label(bs, text=ui.LBL_SEARCH_HOTKEY).grid(row=1, column=0, sticky="w", padx=(30, 6), pady=2)
+        self.cb_search_hk = ttk.Combobox(bs, textvariable=self.v_search_hk, state="readonly", width=18,
+                                         values=list(self.search_hk_labels.values()))
+        self.cb_search_hk.grid(row=1, column=1, sticky="w", pady=2)
+        self.cb_search_store = ttk.Checkbutton(bs, text=ui.CHK_SEARCH_STORE, variable=self.v_search_store)
+        self.cb_search_store.grid(row=2, column=0, columnspan=2, sticky="w", padx=(30, 8), pady=2)
+        self.cb_search_win = ttk.Checkbutton(bs, text=ui.CHK_SEARCH_WINROW, variable=self.v_search_win)
+        self.cb_search_win.grid(row=3, column=0, columnspan=2, sticky="w", padx=(30, 8), pady=2)
+        bc = ttk.LabelFrame(bt, text=ui.LBL_BAR_COLORS)
+        bc.pack(anchor="w", fill="x", pady=(10, 0))
+        self.bar_col_ui = {}
+        for r, key in enumerate(theme.BAR_COLOR_KEYS):
+            ttk.Label(bc, text=ui.BAR_COLOR_NAMES[key]).grid(row=r, column=0, sticky="w", padx=(8, 12), pady=2)
+            sw = self._color_swatch(bc, 4, lambda k=key: self.pick_bar_color(k))     # the swatch is the picker
+            sw.grid(row=r, column=1, pady=2)
+            rb = ttk.Button(bc, text=ui.BTN_BAR_COLOR_RESET, command=lambda k=key: self.reset_bar_color(k))
+            rb.grid(row=r, column=2, padx=6)
+            self.bar_col_ui[key] = (sw, rb)
+        self.btn_bar_colors_reset = ttk.Button(bc, text=ui.BTN_BAR_COLORS_RESET, command=self.reset_bar_colors)
+        self.btn_bar_colors_reset.grid(row=len(theme.BAR_COLOR_KEYS), column=0, columnspan=3, sticky="w", padx=8,
+                                       pady=(6, 4))
+        self.bar_sample = tk.Canvas(bt, width=380, height=theme.BAR_HEIGHT, highlightthickness=0, bd=0)
+        self.bar_sample.pack(anchor="w", pady=(10, 0))
+        self._load_bar()                                      # the boxes, the swatches and the sample from the applied values
+        if app.test_mode:
+            ttk.Label(bt, text=ui.BAR_TEST_NOTE).pack(anchor="w", pady=(10, 0))
+
         self._build_about(self.tab["about"])
 
         # --- Calendar tab (only shown for calendar panels). Compact grid: 4 columns (label, box, label, box).
@@ -2413,14 +2699,18 @@ class SettingsWindow:
         lab(0, 0, ui.LBL_CAL_CALENDARS)
         lf = ttk.Frame(ct)
         lf.grid(row=0, column=1, columnspan=3, sticky="we", pady=2)
-        self.cal_tree = ttk.Treeview(lf, columns=("on", "name", "color"), show="headings", height=4,
-                                     selectmode="browse")
-        for col, text, wd, anchor in (("on", ui.CAL_COL_ON, 36, "center"), ("name", ui.CAL_COL_NAME, 190, "w"),
-                                     ("color", ui.CAL_COL_COLOR, 70, "w")):
+        # The color is a small picture in the tree column "#0" (a Treeview cannot paint a cell): click it to pick.
+        self.cal_tree = ttk.Treeview(lf, columns=("on", "name"), show="tree headings", height=4, selectmode="browse")
+        self.cal_tree.heading("#0", text=ui.CAL_COL_COLOR)
+        self.cal_tree.column("#0", width=56, anchor="center", stretch=False)
+        for col, text, wd, anchor in (("on", ui.CAL_COL_ON, 36, "center"), ("name", ui.CAL_COL_NAME, 190, "w")):
             self.cal_tree.heading(col, text=text)
             self.cal_tree.column(col, width=wd, anchor=anchor, stretch=(col == "name"))
+        self._cal_imgs = []                                   # PhotoImages must be kept or Tk drops them
         self.cal_tree.pack(side="left", fill="both", expand=True)
         self.cal_tree.bind("<Double-1>", lambda e: self.cal_edit())
+        self.cal_tree.bind("<Button-1>", self._cal_tree_click, add="+")
+        self.cal_tree.bind("<Motion>", self._cal_tree_motion)
         bb = ttk.Frame(lf)
         bb.pack(side="left", fill="y", padx=(8, 0))
         self.btn_cal_add = ttk.Button(bb, text=ui.BTN_CAL_ADD, command=self.cal_add)
@@ -2479,12 +2769,8 @@ class SettingsWindow:
             cell = ttk.Frame(cf)
             cell.grid(row=i // 3, column=i % 3, sticky="w", padx=(0, 10), pady=1)
             ttk.Label(cell, text=ui.CAL_COLOR_NAMES[key], width=14).pack(side="left")
-            sw = tk.Label(cell, width=3, relief="solid", bd=1, cursor="hand2", takefocus=True, highlightthickness=1)
+            sw = self._color_swatch(cell, 3, lambda k=key: self.pick_cal_color(k))
             sw.pack(side="left", padx=3)
-            for seq in ("<Button-1>", "<Return>", "<space>"):
-                sw.bind(seq, lambda e, k=key: self.pick_cal_color(k))
-            sw.bind("<Button-1>", lambda e, k=key: (e.widget.focus_set(), self.pick_cal_color(k)))
-            uiwidgets.Tip(sw, ui.TIP_CAL_COLOR_CHANGE)
             mark = ttk.Label(cell, text="", width=1)
             mark.pack(side="left")
             rb = ttk.Button(cell, text=ui.BTN_CAL_COLOR_RESET, width=5, command=lambda k=key: self.reset_cal_color(k))
@@ -2519,6 +2805,7 @@ class SettingsWindow:
         self.cur = ""                       # selected panel name (stays "" when there is no panel)
         self.refresh_panels()
         self.select(name or next(iter(app.panels), ""))
+        self.nb.select(self.tab["general"])           # General is the first tab and the one shown when Settings opens
         self._mark_clean()
         w.protocol("WM_DELETE_WINDOW", self.close)
         winutil.show_in_taskbar(w)          # Settings may appear in the taskbar while it is open
@@ -2539,6 +2826,10 @@ class SettingsWindow:
         self.about_name.pack(anchor="w")
         self.about_ver = ttk.Label(names, text=ui.ABOUT_VER_PREFIX + __version__)
         self.about_ver.pack(anchor="w")
+        self.about_license = ttk.Label(names, text=ui.ABOUT_LICENSE_LINE)
+        self.about_license.pack(anchor="w")
+        self.about_repo = ttk.Label(names, text=ui.ABOUT_REPO_LINE)
+        self.about_repo.pack(anchor="w")
         bar = ttk.Frame(a)
         bar.pack(fill="x", pady=(10, 4))
         self.v_about = tk.StringVar(value="help")
@@ -2583,21 +2874,60 @@ class SettingsWindow:
     def _sync_cal_tab(self, is_calendar):
         present = str(self.tab["calendar"]) in self.nb.tabs()
         if is_calendar and not present:
-            self.nb.insert(self.tab["general"], self.tab["calendar"], text=ui.TAB_CALENDAR)
+            self.nb.insert(self.tab["bar"], self.tab["calendar"], text=ui.TAB_CALENDAR)      # after Content, before Bar
         elif not is_calendar and present:
             self.nb.forget(self.tab["calendar"])
 
     # --- calendar list (a working copy; nothing reaches the panel before Apply)
     def _refresh_cal_list(self, select=None):
         self.cal_tree.delete(*self.cal_tree.get_children())
+        derived = self._derived_cal_palette().get("event", theme.EDGE_HEX)
+        self._cal_imgs = []
         for i, c in enumerate(self.cal_list):
-            self.cal_tree.insert("", "end", iid=str(i), values=(
-                "✓" if c["enabled"] else "", c["name"] or ui.CAL_ERR_UNNAMED, c["color"] or ui.CAL_COLOR_DEFAULT))
+            img = self._cal_swatch_image(c["color"], derived)
+            self._cal_imgs.append(img)
+            self.cal_tree.insert("", "end", iid=str(i), image=img, values=(
+                "✓" if c["enabled"] else "", c["name"] or ui.CAL_ERR_UNNAMED))
         if select is not None and 0 <= select < len(self.cal_list):
             self.cal_tree.selection_set(str(select))
         has = bool(self.cal_list)
         for b_ in (self.btn_cal_edit, self.btn_cal_remove):
             b_.state(["!disabled"] if has else ["disabled"])
+
+    def _cal_swatch_image(self, color, derived):
+        """The color picture of one row: the calendar's color, or (no color set) the color the panel really uses,
+        marked with a short dash. A thin dark frame keeps light colors visible."""
+        w, h = 22, 12
+        img = tk.PhotoImage(master=self.win, width=w, height=h)
+        fill = color or derived
+        img.put(theme.EDGE_HEX, to=(0, 0, w, h))
+        img.put(fill, to=(1, 1, w - 1, h - 1))
+        if not color:
+            img.put(theme.contrast_mark(fill), to=(6, h // 2, w - 6, h // 2 + 1))
+        return img
+
+    def _cal_tree_click(self, e):
+        """A click on the color picture of a row opens the picker for that calendar (the row is selected too)."""
+        if self.cal_tree.identify_region(e.x, e.y) not in ("tree", "cell") or self.cal_tree.identify_column(e.x) != "#0":
+            return
+        iid = self.cal_tree.identify_row(e.y)
+        if iid:
+            self.cal_tree.selection_set(iid)
+            self.pick_cal_list_color(int(iid))
+
+    def _cal_tree_motion(self, e):
+        over = (self.cal_tree.identify_column(e.x) == "#0" and bool(self.cal_tree.identify_row(e.y))
+                and self.cal_tree.identify_region(e.x, e.y) != "heading")
+        self.cal_tree.configure(cursor="hand2" if over else "")
+
+    def pick_cal_list_color(self, i):
+        if not 0 <= i < len(self.cal_list):
+            return
+        cur = self.cal_list[i]["color"] or self._derived_cal_palette().get("event")
+        c = colorchooser.askcolor(color=cur, parent=self.win, title=ui.LBL_CAL_COLOR1)[1]
+        if c:
+            self.cal_list[i] = cal_settings.clean_calendar({**self.cal_list[i], "color": c})
+            self._refresh_cal_list(i)
 
     def _cal_selected(self):
         sel = self.cal_tree.selection()
@@ -2669,6 +2999,16 @@ class SettingsWindow:
             mark.configure(text=ui.CAL_COLOR_MARK if own else "")
             rb.state(["!disabled"] if own else ["disabled"])
         self.btn_cal_revert.state(["!disabled"] if self.cal_colors else ["disabled"])
+
+    def _color_swatch(self, parent, width, pick):
+        """A color box that IS the picker (Calendar colors and Bar colors share it): hand cursor, click or Enter/Space
+        on it calls `pick()`, tooltip 'Click to change'. The caller places it."""
+        sw = tk.Label(parent, width=width, relief="solid", bd=1, cursor="hand2", takefocus=True, highlightthickness=1)
+        for seq in ("<Return>", "<space>"):
+            sw.bind(seq, lambda e: pick())
+        sw.bind("<Button-1>", lambda e: (e.widget.focus_set(), pick()))
+        uiwidgets.Tip(sw, ui.TIP_CAL_COLOR_CHANGE)
+        return sw
 
     def pick_cal_color(self, key):
         cur = self.cal_colors.get(key) or self._derived_cal_palette().get(key)
@@ -2798,6 +3138,110 @@ class SettingsWindow:
             clean[i] = now[i]
         self._clean = tuple(clean)
 
+    # --- Bar tab. The form is (enabled, info enabled, time format key, show date, tasks enabled); the applied values
+    # are the app's.
+    def _bar_applied(self):
+        b = infoclock.sanitize(self.app.cfg.get("bar"))
+        return BarForm(b["enabled"], b["info"]["enabled"], b["info"]["time_format"], b["info"]["show_date"],
+                       b["tasks"]["enabled"], b["tasks"]["show_titles"],
+                       tuple(b["colors"].get(k, "") for k in theme.BAR_COLOR_KEYS),
+                       b["search"]["enabled"], b["search"]["hotkey"], b["search"]["store_apps"], b["search"]["windows_row"],
+                       b["start"]["enabled"])
+
+    def _bar_form(self):
+        keys = {label: k for k, label in self.bar_tf_labels.items()}
+        hk = {label: k for k, label in self.search_hk_labels.items()}
+        return BarForm(bool(self.v_bar.get()), bool(self.v_bar_info.get()),
+                       keys.get(self.v_bar_tf.get(), self._bar_applied().time_format), bool(self.v_bar_date.get()),
+                       bool(self.v_bar_tasks.get()), bool(self.v_bar_titles.get()),
+                       tuple(self.bar_colors.get(k, "") for k in theme.BAR_COLOR_KEYS),
+                       bool(self.v_search.get()), hk.get(self.v_search_hk.get(), self._bar_applied().hotkey),
+                       bool(self.v_search_store.get()), bool(self.v_search_win.get()), bool(self.v_bar_start.get()))
+
+    def _bar_dirty(self):
+        return self._bar_form() != self._bar_applied()
+
+    def _set_bar_form(self, f):
+        self.v_bar.set(f.enabled)
+        self.v_bar_info.set(f.info_on)
+        self.v_bar_tf.set(self.bar_tf_labels[f.time_format])
+        self.v_bar_date.set(f.show_date)
+        self.v_bar_tasks.set(f.tasks_on)
+        self.v_bar_titles.set(f.show_titles)
+        self.v_search.set(f.search_on)
+        self.v_search_hk.set(self.search_hk_labels[f.hotkey])
+        self.v_search_store.set(f.store_apps)
+        self.v_search_win.set(f.windows_row)
+        self.v_bar_start.set(f.start_on)
+        self.bar_colors = {k: v for k, v in zip(theme.BAR_COLOR_KEYS, f.colors) if v}
+        self._refresh_bar_colors()
+
+    def _load_bar(self):
+        self._set_bar_form(self._bar_applied())
+
+    # --- bar colors: only what the user changed is kept; the rest is derived (theme.bar_palette)
+    def _refresh_bar_colors(self):
+        pal = theme.bar_palette(self.bar_colors)
+        for key, (sw, rb) in self.bar_col_ui.items():
+            sw.configure(bg=pal[key])
+            rb.state(["!disabled"] if key in self.bar_colors else ["disabled"])
+        self.btn_bar_colors_reset.state(["!disabled"] if self.bar_colors else ["disabled"])
+        self._draw_bar_sample()
+
+    def pick_bar_color(self, key):
+        cur = theme.bar_palette(self.bar_colors)[key]
+        c = colorchooser.askcolor(color=cur, parent=self.win, title=ui.BAR_COLOR_NAMES[key])[1]
+        if c:
+            self.bar_colors = infoclock.sanitize_colors({**self.bar_colors, key: c})
+            self._refresh_bar_colors()
+
+    def reset_bar_color(self, key):
+        self.bar_colors.pop(key, None)
+        self._refresh_bar_colors()
+
+    def reset_bar_colors(self):
+        self.bar_colors = {}
+        self._refresh_bar_colors()
+
+    def _draw_bar_sample(self):
+        """The sample strip: one normal, one active and one minimized button, drawn by the bar's own painter."""
+        try:
+            pal = theme.bar_palette(self.bar_colors)
+            cv = self.bar_sample
+            cv.configure(bg=pal["background"])
+            cv.delete("all")
+            if getattr(self, "_sample_painter", None) is None:
+                self._sample_painter = barwin.Painter(cv)
+            font = theme.tk_font_spec(theme.CONTENT_STYLE)
+            img = tasks.generic_icon()
+            self._sample_imgs = [ImageTk.PhotoImage(img, master=cv),
+                                 ImageTk.PhotoImage(tasks.dim_icon(img), master=cv)]
+            titles = bool(self.v_bar_titles.get())
+            w = 120 if titles else theme.BAR_ICON_ONLY_W
+            x = 8
+            for state, label in (("normal", ui.BAR_SAMPLE_NORMAL), ("active", ui.BAR_SAMPLE_ACTIVE),
+                                 ("minimized", ui.BAR_SAMPLE_MINIMIZED)):
+                icon = self._sample_imgs[1 if state == "minimized" else 0]
+                self._sample_painter.button(cv, x, w, state, pal, icon, label if titles else "", font)
+                x += w + theme.BAR_BTN_GAP
+        except tk.TclError:
+            pass
+
+    def _apply_bar(self):
+        """Apply the Bar tab. Returns a warning to append ('' when nothing changed or all went well). When the bar
+        cannot be shown nothing is written and the boxes return to the applied values."""
+        if not self._bar_dirty():
+            return ""
+        f = self._bar_form()
+        ok = self.app.apply_bar(f.enabled, {"enabled": f.info_on, "time_format": f.time_format, "show_date": f.show_date},
+                                {"enabled": f.tasks_on, "show_titles": f.show_titles}, dict(self.bar_colors),
+                                {"enabled": f.search_on, "hotkey": f.hotkey, "store_apps": f.store_apps,
+                                 "windows_row": f.windows_row}, {"enabled": f.start_on})
+        self._load_bar()
+        if ok:
+            return ""
+        return ui.MSG_SEARCH_FAILED if self.app.bar_failure == "search" else ui.MSG_BAR_FAILED
+
     def _general_dirty(self):
         app, g = self.app, self.app.cfg["general"]
         if bool(self.v_lock.get()) != bool(app.locked):
@@ -2813,7 +3257,7 @@ class SettingsWindow:
 
     def dirty(self):
         """Is there anything in this window that Apply has not applied yet?"""
-        return self._panel_snapshot() != self._clean or self._general_dirty()
+        return self._panel_snapshot() != self._clean or self._general_dirty() or self._bar_dirty()
 
     def _load_general(self):
         app = self.app
@@ -2882,6 +3326,7 @@ class SettingsWindow:
             return bool(self.apply())
         if choice == "discard":
             self._load_general()
+            self._load_bar()
             return True
         return False
 
@@ -2912,7 +3357,7 @@ class SettingsWindow:
     def apply(self):
         """Apply everything in the window. Returns False when it could not finish (rename refused)."""
         app = self.app
-        hide_msg = self._apply_hide() + self._apply_snapping()
+        hide_msg = self._apply_hide() + self._apply_snapping() + self._apply_bar()
         if not app.test_mode and bool(self.v_auto.get()) != bool(app.cfg["general"].get("autostart", True)):
             app.set_autostart(self.v_auto.get())
         if bool(self.v_lock.get()) != bool(app.locked):
@@ -2982,15 +3427,16 @@ class SettingsWindow:
         self.msg.configure(text=ui.MSG_CAL_LOOK_SAVED)
 
     def reset(self, factory):
-        p = self.app.panels.get(self.cur)
-        if p is None or not self.confirm_overwrite():
+        p = self.app.panels.get(self.cur)           # None when there is no panel: only the general boxes are reset
+        if not self.confirm_overwrite():
             return
-        p.cfg.update(self.app.defaults(factory))
-        if p.is_calendar:                       # look only: source, calendar choice, view, weeks, refresh stay
-            p.cfg["calendar"] = cal_settings.with_look(p.cfg.get("calendar"), self.app.calendar_look(factory))
-        p.apply_cfg()
-        self.app.save()
-        self.select(self.cur)
+        if p is not None:
+            p.cfg.update(self.app.defaults(factory))
+            if p.is_calendar:                   # look only: source, calendar choice, view, weeks, refresh stay
+                p.cfg["calendar"] = cal_settings.with_look(p.cfg.get("calendar"), self.app.calendar_look(factory))
+            p.apply_cfg()
+            self.app.save()
+            self.select(self.cur)
         self._load_general()
         # Snapping: only LOADED into the boxes (the window becomes dirty); Apply puts it in force, like every other
         # General setting. Same rule as the Calendar colors' "Revert to derived colors".
@@ -3000,8 +3446,16 @@ class SettingsWindow:
         self.v_snap_dist.set(str(d["snap_distance"]))
         self.v_stack_gap.set(str(d["stack_gap"]))
         pending = self._general_dirty()
+        if factory:                               # the bar goes back to its default (off); Revert to defaults leaves it alone
+            d = infoclock.defaults()
+            self._set_bar_form(BarForm(d["enabled"], d["info"]["enabled"], d["info"]["time_format"],
+                                       d["info"]["show_date"], d["tasks"]["enabled"], d["tasks"]["show_titles"],
+                                       tuple("" for _ in theme.BAR_COLOR_KEYS), d["search"]["enabled"],
+                                       d["search"]["hotkey"], d["search"]["store_apps"], d["search"]["windows_row"],
+                                       d["start"]["enabled"]))
         self.msg.configure(text=(ui.MSG_FACTORY_LOADED if factory else ui.MSG_DEFAULTS_LOADED)
-                           + (ui.MSG_SNAP_PENDING if pending else ""))
+                           + (ui.MSG_SNAP_PENDING if pending else "")
+                           + (ui.MSG_BAR_PENDING if factory and self._bar_dirty() else ""))
 
 
 # ------------------------------------------------------------------ entry point

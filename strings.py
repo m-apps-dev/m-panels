@@ -7,7 +7,7 @@ Placeholders use str.format fields, e.g. ``MOVE_FAILED.format(what="", error=...
 
 APP_NAME = "M Panels"
 TEST_TAG = "(TEST)"
-DEFAULT_PANEL_NAME = "General"
+DEFAULT_PANEL_NAME = "Sample"       # the panel made at the very first start (not again later)
 RECYCLE_BIN_ITEM = "Recycle Bin"
 
 # --------------------------------------------------------------- preset color names (keys live in theme.PRESETS)
@@ -111,6 +111,7 @@ TAB_TITLE = "Title"
 TAB_CONTENT = "Content"
 TAB_GENERAL = "General"
 TAB_ABOUT = "About"
+TAB_BAR = "Bar"
 LBL_PANEL = "Panel"
 LBL_NAME = "Name"
 LBL_COLOR = "Color"
@@ -141,6 +142,48 @@ MSG_DEFAULT_SAVED = "This look is now the default for new panels."
 MSG_FACTORY_LOADED = "Factory settings loaded."
 MSG_DEFAULTS_LOADED = "Defaults loaded."
 MSG_SNAP_PENDING = " Snapping settings loaded into the boxes: press Apply to use them."
+
+# --------------------------------------------------------------- bar (v1.2)
+CHK_BAR_SHOW = "Show bar (reserves a strip at the top of the main monitor)"
+CHK_BAR_INFO = "Show date and time"
+CHK_BAR_DATE = "Show date"
+LBL_BAR_TIME_FORMAT = "Time format"
+BAR_TIME_24 = "24-hour"
+BAR_TIME_12 = "12-hour"
+BAR_INFO = "{weekday} {day} {month} · {time}"
+BAR_MENU_SETTINGS = "Settings…"
+BAR_MENU_CLOSE = "Close window"
+BAR_TEST_NOTE = "(TEST mode: the bar is drawn, but no screen space is reserved)"
+MSG_BAR_FAILED = " Could not reserve the bar's space: the bar was not shown."
+CHK_BAR_TASKS = "Show open windows"
+CHK_BAR_TITLES = "Show window titles"
+LBL_BAR_COLORS = "Colors"
+BAR_COLOR_NAMES = {"background": "Bar background", "button": "Button", "border": "Button border", "text": "Text",
+                   "active": "Active window"}
+BTN_BAR_COLOR_RESET = "Reset"
+BTN_BAR_COLORS_RESET = "Reset colors"
+BAR_SAMPLE_NORMAL = "Window"
+BAR_SAMPLE_ACTIVE = "Active"
+BAR_SAMPLE_MINIMIZED = "Minimized"
+BAR_OVERFLOW = "+{n}"
+BAR_ELLIPSIS = "…"
+BAR_TEST_WINDOWS = ("Notes — TEST window", "Browser — a page with a rather long title that does not fit on one button",
+                    "Mail — Inbox", "Editor — project", "Terminal", "Calculator", "Files — Documents", "Music")
+MSG_BAR_PENDING = " Bar settings loaded into the boxes: press Apply to use them."
+
+# --------------------------------------------------------------- Start button (v1.2 step 5)
+CHK_START_SHOW = "Show Start button"
+
+# --------------------------------------------------------------- search (v1.2 step 4)
+LBL_SEARCH = "Search"
+CHK_SEARCH_SHOW = "Show search button"
+LBL_SEARCH_HOTKEY = "Shortcut key"
+SEARCH_HOTKEY_LABELS = {"off": "Off", "win+alt+space": "Win+Alt+Space", "ctrl+shift+space": "Ctrl+Shift+Space"}
+CHK_SEARCH_STORE = "Include Store apps"
+CHK_SEARCH_WINROW = "Show 'Search Windows' row"
+SEARCH_WINDOWS_ROW = "Search Windows for '{text}'"
+SEARCH_LAUNCH_FAILED = "Could not start {name}."
+MSG_SEARCH_FAILED = " Could not register the shortcut key (another program may be using it): the bar settings were not applied."
 
 # --------------------------------------------------------------- command line
 ARG_DESKTOP = "TEST mode: use this folder as the desktop (the real desktop is not touched)"
@@ -329,12 +372,18 @@ ABOUT_VER_PREFIX = "v"
 ABOUT_DATE_SEP = " — "
 ABOUT_BULLET = "• "
 ABOUT_NO_CHANGELOG = "The release notes (CHANGELOG.md) could not be read."
+ABOUT_LICENSE_LINE = "MIT License · Copyright (c) 2026 M-Apps"
+ABOUT_REPO_LINE = "github.com/m-apps-dev/m-panels"           # plain text, not a link
 
-# Help: (heading, (bullet, ...)). Shown on the About tab; keep it short.
+# Help: (heading, (bullet, ...)). Shown on the About tab; keep each bullet under 140 characters.
+# Names of buttons, menu items, settings and tabs must match the strings above exactly (tests/test_v120_help.py).
 HELP_SECTIONS = (
     ("What M Panels does", (
         "Puts small, movable panels on your desktop: shortcuts, notes and a calendar.",
-        "Everything is saved automatically. Nothing is ever permanently deleted by the program.",
+        "An optional bar along the top of the screen adds your open windows, search, a Start button and the date and time.",
+        "Use it your way: panels only, the bar only, or both.",
+        "Panels only: leave the bar off (the default). Bar only: turn on Settings › Bar › Show bar and delete the Sample panel.",
+        "Everything is saved automatically. Your files and notes are never deleted by the program; only the oldest settings backups are.",
         "Right-click a panel header (or use the ⋯ button) for its menu.",
     )),
     ("Shortcut panels", (
@@ -352,13 +401,71 @@ HELP_SECTIONS = (
         "Shows your calendars as a List (1–4 weeks), a Day or a Week view; switch views in the panel's top row.",
         "Hover an event for its details; use the mouse wheel to scroll.",
         "Settings has a Calendar tab: add your calendars (secret iCal addresses), choose which to show, the view and the refresh interval.",
+        "Settings › Calendar: choose 12-hour or 24-hour time, whether the week starts on Monday or Sunday, the hours shown, and colors.",
+        "Panel menu: Open Google Calendar opens it in your browser.",
+        "Settings › Calendar › Import from M Calendar config… reads an older calendar list once.",
+        "Make current Calendar look the default saves your hours, colors and time format for new Calendar panels.",
         "If a calendar cannot be read, a short message appears inside the panel; other panels are not affected.",
+    )),
+    ("Snapping and stacks", (
+        "Drop a panel close to another panel's edge and it snaps there: under it (forming a stack) or beside it.",
+        "A blue frame shows where it will land. Press Esc while dragging to cancel the whole move.",
+        "In a stack, opening, closing or resizing a panel moves the panels below it. Dragging the top panel moves the whole stack.",
+        "Pull a lower panel a short way out of a stack to take it out; drop it sooner and it goes back.",
+        "Settings › General › Snapping: turn snapping and the preview on or off, set the snap distance and the gap between stacked panels.",
+        "Locked panels do not snap or leave a stack.",
+    )),
+    ("Several monitors", (
+        "Each panel remembers the place where you put it. If its monitor is missing, the panel is shown on the main monitor.",
+        "When the monitor comes back, the panel goes back to its own place. Nothing you saved is overwritten.",
+        "If you move a panel yourself while its monitor is missing, the new place becomes its home.",
+        "A panel's title bar always stays on a screen, never under the bar or the taskbar.",
+    )),
+    ("The bar", (
+        "Turn it on in Settings › Bar › Show bar. It runs along the top of the main monitor; maximized windows stop below it.",
+        "Panels that would sit under the bar are shown just below it. Their saved places are not changed.",
+        "The date and time are on the right. Settings › Bar: show or hide them, 24-hour or 12-hour, with or without the date.",
+        "Settings › Bar › Colors: click a color box to change it. Reset puts one back, Reset colors puts them all back.",
+        "Right-click the bar (not a window button) to choose Settings…; quitting M Panels gives the screen space back.",
+        "M Panels does not change your Windows taskbar settings. The tray's Show / Hide does not hide the bar.",
+    )),
+    ("Open windows", (
+        "The bar lists your open windows, one button each, in the order the programs were started. New windows go to the end.",
+        "Click a button to bring that window forward. Click the active window's button to minimize it; click a minimized one to restore it.",
+        "Right-click a button and choose Close window to ask it to close, like its X button. A program can still ask about unsaved work.",
+        "When there is no more room, the last button is +N. Its menu lists the other windows and works the same way.",
+        "Settings › Bar: Show open windows turns the list off. Show window titles off gives icon-only buttons; point at one to see its title.",
+    )),
+    ("Search", (
+        "Click the magnifier button on the bar, or press the shortcut key, and type a program name. Enter starts the first match.",
+        "Arrow keys or a click choose another row. Esc closes the window and gives focus back; clicking elsewhere also closes it.",
+        "It searches the Start menu's All apps list, Store apps included. Capitals and accents do not matter.",
+        "Initials work too: typing vsc finds Visual Studio Code.",
+        "Settings › Bar › Search: Shortcut key (Off, Win+Alt+Space or Ctrl+Shift+Space) and Include Store apps.",
+        "If another program already uses the shortcut key, Apply tells you and changes nothing.",
+        "Show 'Search Windows' row adds a last row, Search Windows for '…', that opens Windows Search and types your text there.",
+    )),
+    ("Start button", (
+        "The button with four colored tiles at the left end of the bar opens the Windows Start menu. Click it again to close the menu.",
+        "Right-click it to choose Settings…; Settings › Bar › Show Start button turns it off.",
     )),
     ("General", (
         "Lock panels: disables moving and resizing; opening items and collapsing still work.",
         "Hide desktop icons: hides Explorer's desktop icons; they come back when M Panels quits.",
-        "Tray icon: Show / Hide, New panel, Settings and Quit.",
+        "Tray icon: Show / Hide, New panel, Settings… and Quit. Show / Hide does not hide the bar.",
         "Start with Windows: starts M Panels quietly at login.",
         "Starting M Panels twice just brings the running copy forward.",
+        "Settings change only when you press Apply. Closing with unapplied changes asks Apply / Discard / Cancel.",
+        "Every start saves a copy of your settings in the backups folder; the last 15 are kept.",
+        "To go back: quit M Panels, copy a backup over config.json, then start M Panels again.",
+    )),
+    ("Known limitations", (
+        "Programs running as administrator can be brought forward from the bar, but not minimized, restored or closed. Windows does not allow it.",
+        "Windows opens the Start menu at the bottom left of the screen, next to its taskbar, not under the bar.",
+        "Store apps show a general icon (with a letter) in search results; their own logo cannot be read.",
+        "If Windows Search does not open within about a second, the text of the Search Windows row is not typed.",
+        "Monitors with different display scaling (DPI) have not been tried.",
+        "Panels below the top of a stack can extend past the bottom of the screen.",
+        "Panels from two different missing monitors can end up on top of each other on the main monitor.",
     )),
 )

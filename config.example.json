@@ -5,6 +5,28 @@
     "hide_desktop_icons": false,
     "hide_icons_restore": null
   },
+  "bar": {
+    "enabled": false,
+    "info": {
+      "enabled": true,
+      "time_format": "24h",
+      "show_date": true
+    },
+    "tasks": {
+      "enabled": true,
+      "show_titles": true
+    },
+    "search": {
+      "enabled": true,
+      "hotkey": "off",
+      "store_apps": true,
+      "windows_row": false
+    },
+    "start": {
+      "enabled": true
+    },
+    "colors": {}
+  },
   "panels": {
     "Genel": {
       "color": "#3aa0ff",
