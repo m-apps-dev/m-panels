@@ -33,7 +33,7 @@ MAX_TYPED = 256                # most characters typed into Windows Search
 MOD_ALT, MOD_CONTROL, MOD_SHIFT, MOD_WIN = 0x1, 0x2, 0x4, 0x8
 VK_SPACE = 0x20
 # The shortcut keys the Settings list offers (key = the value in config.json). Alt+Space (it would break every window's
-# system menu) and Ctrl+Space (code completion in editors) are NOT offered. Experiment (24.11): these two were free.
+# system menu) and Ctrl+Space (code completion in editors) are NOT offered. Testing showed that Win+Alt+Space and Ctrl+Shift+Space are free on Windows 11.
 HOTKEYS = {"off": None, "win+alt+space": (MOD_WIN | MOD_ALT, VK_SPACE), "ctrl+shift+space": (MOD_CONTROL | MOD_SHIFT, VK_SPACE)}
 DEFAULT_HOTKEY = "off"
 DEFAULTS = {"enabled": True, "hotkey": DEFAULT_HOTKEY, "store_apps": True, "windows_row": False}

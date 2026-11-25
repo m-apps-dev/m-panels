@@ -69,14 +69,14 @@ class TestBackupFunction(Base):
         self.assertEqual(len(self.names()), 2)
         self.assertEqual(self.read_backup(self.names()[-1]), content(2))
 
-    def test_going_back_to_an_older_content_counts_as_new_only_against_the_newest(self):
+    def test_content_equal_to_any_older_backup_is_not_saved_again(self):
         self.write(content(1))
         backup.make_backup(self.cfg, now=T0)
         self.write(content(2))
         backup.make_backup(self.cfg, now=T0 + datetime.timedelta(minutes=1))
-        self.write(content(1))                                       # equal to the OLDER one, not the newest
+        self.write(content(1))                                       # equal to the OLDER one, not the newest (v1.3: any backup counts)
         backup.make_backup(self.cfg, now=T0 + datetime.timedelta(minutes=2))
-        self.assertEqual(len(self.names()), 3)
+        self.assertEqual(len(self.names()), 2)
 
     def test_same_second_different_content_gets_the_next_free_name(self):
         self.write(content(1))
@@ -101,8 +101,8 @@ class TestBackupFunction(Base):
             self.write(content(i))
             backup.make_backup(self.cfg, now=T0 + datetime.timedelta(minutes=i))
             if i < 15:
-                self.assertEqual(len(backup.list_backups(self.bdir)), i + 1)
-        mine = backup.list_backups(self.bdir)
+                self.assertEqual(len(backup.backup_names(self.bdir)), i + 1)
+        mine = backup.backup_names(self.bdir)
         self.assertEqual(len(mine), 15)
         self.assertNotIn("config-20261123-100000.json", mine)                        # the oldest is gone
         self.assertEqual(self.read_backup(mine[0]), content(1))
@@ -118,7 +118,7 @@ class TestBackupFunction(Base):
                 self.assertLogs("mpanels", level="WARNING") as cm:
             self.assertIsNone(backup.make_backup(self.cfg, now=T0))
         self.assertTrue(any("backup failed" in m for m in cm.output), cm.output)
-        self.assertEqual(backup.list_backups(self.bdir), [])
+        self.assertEqual(backup.backup_names(self.bdir), [])
 
     def test_unreadable_folder_is_not_an_error(self):
         self.write(content(1))
@@ -157,7 +157,7 @@ class TestAtStartup(Base):
     def test_start_backs_up_the_config_as_it_was_before_the_start(self):
         self.write(content(7))
         self.start()
-        names = backup.list_backups(self.bdir)
+        names = backup.backup_names(self.bdir)
         self.assertEqual(len(names), 1)
         self.assertEqual(self.read_backup(names[0]), content(7))      # not what the start wrote afterwards
         with open(self.cfg, "rb") as f:
@@ -170,11 +170,11 @@ class TestAtStartup(Base):
 
         def load(path, default):
             if path.endswith("config.json"):
-                seen.append(("load", backup.list_backups(self.bdir)))
+                seen.append(("load", backup.backup_names(self.bdir)))
             return real_load(path, default)
 
         def save(app):
-            seen.append(("save", backup.list_backups(self.bdir)))
+            seen.append(("save", backup.backup_names(self.bdir)))
             return real_save(app)
         with mock.patch.object(mpanels, "load_json", load), mock.patch.object(mpanels.App, "save", save):
             self.start()
@@ -187,17 +187,17 @@ class TestAtStartup(Base):
     def test_second_start_with_the_same_content_adds_nothing_and_a_changed_one_adds_one(self):
         self.write(content(7))
         self.start().quit()                                            # quit saves: the config now differs from content(7)
-        self.assertEqual(len(backup.list_backups(self.bdir)), 1)
+        self.assertEqual(len(backup.backup_names(self.bdir)), 1)
         self.write(content(7))                                         # as before
         self.start().quit()
-        self.assertEqual(len(backup.list_backups(self.bdir)), 1)       # identical to the newest: nothing new
+        self.assertEqual(len(backup.backup_names(self.bdir)), 1)       # identical to the newest: nothing new
         self.write(content(8))
         self.start()
-        self.assertEqual(len(backup.list_backups(self.bdir)), 2)
+        self.assertEqual(len(backup.backup_names(self.bdir)), 2)
 
     def test_first_installation_without_config_makes_no_backup(self):
         self.start()
-        self.assertEqual(backup.list_backups(self.bdir), [])
+        self.assertEqual(backup.backup_names(self.bdir), [])
         self.assertFalse(os.path.exists(self.bdir))
 
     def test_a_failing_backup_does_not_stop_the_start_and_is_logged(self):
@@ -212,7 +212,7 @@ class TestAtStartup(Base):
     def test_an_unexpected_error_in_the_backup_code_does_not_stop_the_start(self):
         self.write(content(7))
         self.make_panel()
-        with mock.patch("backup.list_backups", side_effect=RuntimeError("boom")):
+        with mock.patch("backup.backup_names", side_effect=RuntimeError("boom")):
             app = self.start()
         self.assertTrue(app.panels)
 

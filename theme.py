@@ -24,7 +24,9 @@ OPACITY = 0.95
 # ------------------------------------------------------------------ metrics (corner, title bar)
 HEAD_H = 30                     # title bar height (px)
 RADIUS = 14                     # corner radius
-BORDER = 2                      # colored border width
+BORDER = 2                      # colored border width (the default of every panel's "border" setting)
+BORDER_MIN, BORDER_MAX = 0, 4   # what the user may choose (px); wider would collide with the content padding
+GRIP_INSET = 3                  # resize grip lines sit this many px inside the border (border 2 -> 5 px from the edge)
 HEAD_PAD = 12                   # when the title text grows, bar height = line height + this
 HEAD_GLYPH_FONT = ("Segoe UI", 11)           # collapse/expand arrow
 HEAD_MENU_FONT = ("Segoe UI", 14, "bold")    # the ⋯ button
@@ -362,6 +364,21 @@ def rounded_masks(w, h, radius, border):
             radius=max(1, (radius - inset) * S), fill=255)
         return m.resize((w, h), Image.LANCZOS).point(lambda v: 255 if v >= 128 else 0)
     return mask(0), mask(border)
+
+
+def normalize_border(v):
+    """A panel's border width from whatever the config holds: a whole number is kept (clamped to BORDER_MIN..BORDER_MAX);
+    anything else (text that is not a whole number, a fraction, empty, None, bool) becomes the default."""
+    if isinstance(v, bool) or v is None:
+        return BORDER
+    try:
+        f = float(str(v).strip().replace(",", "."))
+        n = int(f)
+    except (ValueError, TypeError, OverflowError):
+        return BORDER
+    if n != f:
+        return BORDER
+    return max(BORDER_MIN, min(BORDER_MAX, n))
 
 
 def make_bg(w, h, color, radius=RADIUS, border=BORDER):

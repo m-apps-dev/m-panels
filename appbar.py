@@ -6,7 +6,7 @@ Three parts, so everything but the Windows calls can be tested with a made-up ba
   NullAppBar       the TEST-mode backend: accepts everything, reserves nothing (the real work area is never touched);
   AppBarSession    the order of the calls: NEW -> QUERYPOS -> SETPOS, re-position, re-register, REMOVE (idempotent).
 
-Measured on this machine (docs/PLAN.md, "Deneme sonuclari"): a hidden pywin32 window is accepted as the owner, the work
+Measured on a real Windows system: a hidden pywin32 window is accepted as the owner, the work
 area changes at once, and Windows drops the reservation by itself when the process is killed. Calls are made on the
 Tk thread; the owner window's messages only arrive in the app queue (shellmsg.py).
 """

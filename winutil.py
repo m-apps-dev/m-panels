@@ -517,7 +517,7 @@ def start_instance_listener(name, callback, kind=RAISE):
 
 
 def find_pythonw():
-    """Path of the console-less interpreter (pythonw.exe) next to the running Python (conda base here),
+    """Path of the console-less interpreter (pythonw.exe) next to the running Python,
     or None if it cannot be found."""
     exe = sys.executable
     if os.path.basename(exe).lower() == "pythonw.exe" and os.path.exists(exe):
@@ -542,6 +542,13 @@ def app_icon_path():
     """The icon file to use (tray source, shortcuts): the bundled assets/m_panels.ico, or None if it is missing."""
     p = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "m_panels.ico")
     return p if os.path.isfile(p) else None
+
+
+def shortcut_icon_path():
+    """The icon for the Desktop and Startup shortcuts: assets/m_panels_shortcut.ico (the four-tile icon); when that file is
+    missing, the bundled assets/m_panels.ico; None when neither exists. The tray, window and bar icons do not use this."""
+    p = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "m_panels_shortcut.ico")
+    return p if os.path.isfile(p) else app_icon_path()
 
 
 def open_path(path):

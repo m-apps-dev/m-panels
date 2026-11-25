@@ -2,6 +2,20 @@
 
 Newest first. The About tab in Settings reads this file; the current version (version.py) must have an entry.
 
+## Unreleased
+
+## 1.3.0 — 2026-11-25
+
+### Panels
+- Settings > Panel > Border width: the colored edge of a panel can be 0 to 4 px wide (2 px, as before, is the default, so nothing changes until you choose another value). It is set for each panel, works for shortcut, note and calendar panels, and is included in "Make default", "Revert to defaults" and "Factory settings". The resize grip in the bottom right corner moves with the edge. At 0 px the edge is almost black, so a panel can be hard to see on a dark background. Tick "Apply to all panels" next to it and press Apply to give every panel that width (nothing else changes); the box clears itself after Apply.
+
+### Backups
+- Settings > General > Restore from backup…: lists the automatic copies of your settings (newest first, with date, time and how many panels of each kind each copy holds; unreadable copies are grey and cannot be chosen). After you confirm, M Panels saves your current settings as a backup, closes and puts the chosen copy in place. Start it again from the desktop shortcut; it does not reopen by itself. If the current settings cannot be backed up, nothing is restored. Shortcut panel folders and notes on disk are not touched, and whether desktop icons are hidden stays as it is now.
+- A backup is now skipped when it is identical to any existing backup, not only the newest one.
+
+### General
+- The desktop shortcut uses the four-tile icon (the same one as the Start button). Run kur.py --shortcuts again to update an existing shortcut.
+
 ## 1.2.0 — 2026-11-24
 
 ### Bar
@@ -30,7 +44,7 @@ Newest first. The About tab in Settings reads this file; the current version (ve
 - "Close window" (right-click on a window button; the "+N" list has no Close) asks that window to close, the same request as its X button (WM_CLOSE posted to it), so a program with unsaved work can still ask what to do. No process is ever ended. The button leaves the list by itself when Windows reports the window gone (it is not removed by hand).
 - "Close window" counts as a command: the foreground is left to the window you asked (the previous window is not given the foreground back). If the window is already gone, or Windows refuses (a program running as administrator), nothing is shown; one line goes to the log.
 - Changes are noticed at once (Windows window events), and a check every 2 seconds catches anything missed. With the bar off nothing is installed or watched.
-- The bar's message window was tested with 64-bit message parameters (as Windows sends them for some window events); no fault was found, and a test keeps it that way. The window hooks are removed, and the helper thread has ended, before M Panels exits.
+- The window hooks are removed, and the helper thread has ended, before M Panels exits.
 - TEST mode: a made-up list is shown and nothing is installed; clicks are only recorded, no real window is touched.
 - config.json: `bar.tasks` with `enabled` (true by default) and `show_titles` (true by default). An older config.json without them keeps working and looks like the defaults.
 
@@ -48,7 +62,7 @@ Newest first. The About tab in Settings reads this file; the current version (ve
 ### Start button
 - New: a Start button at the very left of the bar (Settings > Bar > "Show Start button", on by default): four flat colored tiles (blue, green, orange, purple; no frame, no dark background), 28 px, centered in its 32 px place (2 px from the edge of the bar on the left, top and bottom). Click it to open the Windows Start menu, click it again to close it (the button presses the Win key once; Windows decides whether that opens or closes the menu). A quick double-click acts only once. If the search window is open, a click on Start closes it first and does not give the focus back to the earlier window. The whole Start place from the left edge of the screen, top to bottom, is clickable (throw the mouse into the corner). The icon gets a little brighter when the pointer is on it. If the icon cannot be drawn, nine dots are shown instead. The button has no "pressed" look while the Start menu is open.
 - Spacing: the Start place is 32 px wide, the search button follows 4 px later, and the window buttons 4 px after it (the same gap as between window buttons). The left end of the bar is 72 px.
-- The tray icon (next to the clock) is the same four tiles, drawn at exactly the size Windows shows it (16 px here), with no frame. The program icon file, the shortcuts and the About window keep the old look.
+- The tray icon (next to the clock) is the same four tiles, drawn at exactly the size Windows shows it, with no frame. The program icon file, the shortcuts and the About window keep the old look.
 - When the button is off its place (the first 32 px) stays empty: the search button and the window buttons do not move.
 - config.json: `bar.start` with `enabled`; written only when it is off. An older config.json without it keeps working (the button is on).
 - TEST mode: the button is drawn, but no key is sent.

@@ -1,12 +1,16 @@
-"""Generates the M Panels icon: assets/m_panels.png and assets/m_panels.ico (the bundled placeholder).
-M Calendar family: dark background, thin cyan/blue edge, a glow from the center.
+"""Generates the M Panels icons: assets/m_panels.png and assets/m_panels.ico (the bundled placeholder; M Calendar family:
+dark background, thin cyan/blue edge, a glow from the center) and assets/m_panels_shortcut.ico (the desktop shortcut:
+the four-tile Start button icon, drawn by theme.tile_icon, one drawing per size).
 Run: python tools/ikon_uret.py   (does not touch the shared _ikonlar icon folder)
 """
 import os
+import sys
 
 from PIL import Image, ImageChops, ImageDraw, ImageFilter
 
 OUT = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "assets")
+SHORTCUT_SIZES = (16, 24, 32, 48, 64, 128, 256)
+SHORTCUT_ICO = "m_panels_shortcut.ico"
 S = 1024                       # drawn at 2x, then scaled down
 TILES = [("#3aa0ff", (0, 0)), ("#3ddc84", (1, 0)), ("#ff9a3c", (0, 1)), ("#a56bff", (1, 1))]
 
@@ -71,9 +75,19 @@ def build():
     return img.resize((512, 512), Image.LANCZOS)
 
 
+def build_shortcut_ico(path):
+    """Write the multi-size desktop shortcut icon: theme.tile_icon(size) for every size (the same drawing as the Start button
+    and the tray icon, drawn at each size, not one big image shrunk)."""
+    sys.path.insert(0, os.path.dirname(OUT))
+    import theme
+    frames = [theme.tile_icon(n) for n in SHORTCUT_SIZES]
+    frames[-1].save(path, format="ICO", sizes=[(n, n) for n in SHORTCUT_SIZES], append_images=frames[:-1])
+
+
 if __name__ == "__main__":
     os.makedirs(OUT, exist_ok=True)
     icon = build()
     icon.save(os.path.join(OUT, "m_panels.png"))
     icon.save(os.path.join(OUT, "m_panels.ico"), sizes=[(256, 256), (128, 128), (64, 64), (48, 48), (32, 32), (16, 16)])
+    build_shortcut_ico(os.path.join(OUT, SHORTCUT_ICO))
     print("written:", OUT)

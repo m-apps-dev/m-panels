@@ -1,4 +1,4 @@
-"""M Panels — desktop shortcut panels (Fences-like). Design: docs/PLAN.md
+"""M Panels — desktop shortcut panels (Fences-like).
 
 Each panel = a Desktop\\Paneller\\<name> folder (the single source of truth). config.json only holds looks.
 No permanent deletion: nothing in this program deletes files.
@@ -103,7 +103,7 @@ MIN_W, MIN_H = 150, HEAD_H + 80
 
 # Factory values (color/font/metric values come from theme.py). defaults.json (gitignored) overrides them.
 PANEL_FACTORY = {
-    "color": theme.DEFAULT_COLOR, "opacity": theme.OPACITY, "icon_size": 32,
+    "color": theme.DEFAULT_COLOR, "opacity": theme.OPACITY, "icon_size": 32, "border": theme.BORDER,
     **theme.style_defaults(),                    # title_* and content_* (title and content text are SEPARATE)
     "start_collapsed": False, "hover_open": False,
 }
@@ -701,6 +701,10 @@ class PanelWin:
                                           slant="italic" if st["italic"] else "roman")
         return self.fonts[key]
 
+    def border(self):
+        """The panel's border width in px (0-4; a bad value in the config counts as the default)."""
+        return theme.normalize_border(self.cfg.get("border"))
+
     def calc_head_h(self):
         """Header bar height: at least theme.HEAD_H; grows with the text for a large title font."""
         return max(HEAD_H, int(self.font("title").metrics("linespace")) + theme.HEAD_PAD)
@@ -792,9 +796,9 @@ class PanelWin:
                 self.cal_cv.place(x=0, y=self.head_h + nav, width=w, height=ch)
             else:
                 self.cal_cv.place_forget()
-        key = (w, h, self.cfg["color"], self.head_h)
+        key = (w, h, self.cfg["color"], self.head_h, self.border())
         if key != self._bg_key:
-            bg = make_bg(w, h, self.cfg["color"])
+            bg = make_bg(w, h, self.cfg["color"], border=self.border())
             self.bg_head = ImageTk.PhotoImage(bg.crop((0, 0, w, min(h, self.head_h))))
             self.bg_body = ImageTk.PhotoImage(bg.crop((0, self.head_h, w, h))) if h > self.head_h else None
             self._bg_key = key
@@ -1055,7 +1059,8 @@ class PanelWin:
         """Resize grip (not drawn while the panels are locked)."""
         if self.app.locked:
             return
-        gx, gy = w - 5, h - 5
+        inset = self.border() + theme.GRIP_INSET            # border 2 -> 5, the place it always had
+        gx, gy = w - inset, h - inset
         for k in (4, 8, 12):
             b.create_line(gx - k, gy, gx, gy - k, fill=blend(self.cfg["color"], theme.WHITE, theme.GRIP_MIX))
 
@@ -1242,6 +1247,8 @@ class App:
         self.visible = True
         self.tray = None
         self._quitting = False
+        self.restore_failure = None        # why the last request_restore refused (an English message), or None
+        self.pending_restore = None        # bytes of a config to put in place as the very last step of quit()
         self.hard_exit_s = None                # set by main(): last-resort os._exit watchdog
         self.settings_win = None
         self._fs_dirty = set()
@@ -1441,6 +1448,7 @@ class App:
             if isinstance(saved, dict):
                 theme.migrate_style(saved)               # old defaults.json: font_size/text_color
                 d.update({k: v for k, v in saved.items() if k in PANEL_FACTORY})
+        d["border"] = theme.normalize_border(d["border"])        # a hand-edited defaults.json
         return theme.sanitize_style(d)
 
     def snapping_defaults(self, factory=False):
@@ -1492,6 +1500,7 @@ class App:
             c.setdefault(k, copy.deepcopy(v))
         theme.sanitize_style(c)
         c["icon_size"] = normalize_icon_size(c["icon_size"])     # old config value -> 16–128 px
+        c["border"] = theme.normalize_border(c["border"])        # missing/garbage -> 2, else 0-4 px
         if c["type"] not in ("shortcut", "note", "calendar"):
             c["type"] = "shortcut"
         if c["type"] == "calendar":
@@ -1670,7 +1679,7 @@ class App:
         self.relayout_displays()
         return True
 
-    # ------------------------------------------------------------ snapping and stacks (v1.1 step 7a; see docs/PLAN.md, step 7)
+    # ------------------------------------------------------------ snapping and stacks (v1.1 step 7a)
     def stack_pos(self, name):
         """(stack index, position) of a panel, or None."""
         return stack.find(self.cfg["stacks"], name)
@@ -2094,7 +2103,7 @@ class App:
 
     # ------------------------------------------------------------ item operations
     def drop_paths(self, panel, paths):
-        """Items dropped from Explorer (the drag-and-drop rules in docs/PLAN.md)."""
+        """Items dropped from Explorer (the rules are in fileops.handle_drop)."""
         msgs, errs = [], []
         for p in paths:
             r = fileops.handle_drop(self.ctx, panel.name, p)
@@ -2416,6 +2425,31 @@ class App:
             else:
                 p.top.withdraw()
 
+    def request_restore(self, backup_path):
+        """Restore a backup: save now, check the chosen copy and back up the current config (backup.prepare_restore),
+        remember the bytes and quit normally; quit() writes them as its last step. No automatic restart.
+        Returns False (nothing changed, program keeps running, `restore_failure` says why) when the copy cannot be used
+        or the current settings could not be backed up."""
+        self.restore_failure = None
+        try:
+            self.save()
+            data = backup.prepare_restore(self.config_path, backup_path)
+        except ValueError:
+            self.restore_failure = ui.MSG_RESTORE_BAD
+            return False
+        except backup.BackupFailed as e:
+            logging.getLogger("mpanels").warning(ui.LOG_RESTORE_STOPPED, e)
+            self.restore_failure = ui.MSG_RESTORE_NO_BACKUP
+            return False
+        self.pending_restore = data
+        self.quit()
+        return True
+
+    def _write_pending_restore(self):
+        if self.pending_restore is not None:
+            data, self.pending_restore = self.pending_restore, None
+            backup.write_restore(self.config_path, data)
+
     def quit(self):
         """Close everything and end the process: panels/windows, tray icon, background threads, the
         single-instance lock. Each step is guarded so one failure cannot keep the program alive; when
@@ -2439,6 +2473,7 @@ class App:
             lambda: [p.model.stop() for p in self.panels.values() if p.model is not None],
             winutil.release_single_instance,
             self.root.destroy,
+            self._write_pending_restore,        # LAST: after every save, so nothing overwrites the restored file
         )
         for step in steps:
             try:
@@ -2526,8 +2561,9 @@ class SettingsWindow:
         f = ttk.Frame(w, padding=12)
         f.pack(fill="both", expand=True)
         self.v = {k: tk.StringVar() for k in ("panel", "name", "color", "icon", "cal_view",
-                                              "cal_weeks", "cal_refresh", "cal_start", "cal_end", "cal_hh",
+                                              "cal_weeks", "cal_refresh", "border", "cal_start", "cal_end", "cal_hh",
                                               "cal_ehh", "cal_fade")}
+        self.v_border_all = tk.BooleanVar(value=False)      # "Apply to all panels" next to Border width; one-shot
         self.v_cal_fit = tk.BooleanVar(value=True)
         self.v_cal_shrink = tk.BooleanVar(value=True)
         self.v_cal_tf = tk.StringVar()
@@ -2587,8 +2623,15 @@ class SettingsWindow:
         ttk.Button(cf, text=ui.BTN_PICK_COLOR, command=self.pick_color).pack(side="left")
         row(p, 1, ui.LBL_COLOR, cf)
         row(p, 2, ui.LBL_OPACITY, ttk.Scale(p, from_=30, to=100, variable=self.v_op, orient="horizontal"))
-        ttk.Checkbutton(p, text=ui.CHK_START_COLLAPSED, variable=self.v_start).grid(row=3, column=1, sticky="w")
-        ttk.Checkbutton(p, text=ui.CHK_HOVER_OPEN, variable=self.v_hover).grid(row=4, column=1, sticky="w")
+        bw = ttk.Frame(p)
+        self.sp_border = ttk.Spinbox(bw, from_=theme.BORDER_MIN, to=theme.BORDER_MAX, increment=1,
+                                     textvariable=self.v["border"], width=6)
+        self.sp_border.pack(side="left")
+        self.cb_border_all = ttk.Checkbutton(bw, text=ui.CHK_BORDER_ALL, variable=self.v_border_all)
+        self.cb_border_all.pack(side="left", padx=(12, 0))
+        row(p, 3, ui.LBL_BORDER.format(lo=theme.BORDER_MIN, hi=theme.BORDER_MAX), bw)
+        ttk.Checkbutton(p, text=ui.CHK_START_COLLAPSED, variable=self.v_start).grid(row=4, column=1, sticky="w")
+        ttk.Checkbutton(p, text=ui.CHK_HOVER_OPEN, variable=self.v_hover).grid(row=5, column=1, sticky="w")
         p.columnconfigure(1, weight=1)
 
         # --- Title tab
@@ -2627,6 +2670,10 @@ class SettingsWindow:
         self.sp_stack_gap = ttk.Spinbox(sn, from_=stack.STACK_GAP_RANGE[0], to=stack.STACK_GAP_RANGE[1],
                                         increment=1, textvariable=self.v_stack_gap, width=4)
         self.sp_stack_gap.pack(side="left")
+        bk = ttk.LabelFrame(g, text=ui.LBL_BACKUPS, padding=(6, 2))
+        bk.pack(fill="x", pady=(8, 0))
+        self.btn_restore = ttk.Button(bk, text=ui.BTN_RESTORE, command=self.restore_from_backup)
+        self.btn_restore.pack(side="left")
         if app.test_mode:
             self.cb_auto.state(["disabled"])
             self.cb_hide.state(["disabled"])
@@ -3098,6 +3145,8 @@ class SettingsWindow:
         self.v["color"].set(pre.get(c["color"], ui.COLOR_CUSTOM))
         self.v_op.set(round(c["opacity"] * 100))
         self.v["icon"].set(str(c["icon_size"]))
+        self.v["border"].set(str(c["border"]))
+        self.v_border_all.set(False)
         self.sp_icon.state(["disabled"] if (pw.is_note or pw.is_calendar) else ["!disabled"])
         self._sync_cal_tab(pw.is_calendar)
         if pw.is_calendar:
@@ -3118,7 +3167,8 @@ class SettingsWindow:
                 self.v["cal_weeks"].get(), self.v["cal_refresh"].get(),
                 tuple(self.v[k].get() for k in self.CAL_LOOK_KEYS), bool(self.v_cal_fit.get()),
                 bool(self.v_cal_shrink.get()), self.v_cal_tf.get(), self.v_cal_ws.get(),
-                tuple(sorted(self.cal_colors.items())))
+                tuple(sorted(self.cal_colors.items())), self.v["border"].get(),
+                bool(self.v_border_all.get()))          # keep LAST: SNAP_CAL_* above are positions
 
     def _mark_clean(self):
         self._clean = self._panel_snapshot()
@@ -3314,6 +3364,68 @@ class SettingsWindow:
         self.win.wait_window(d)
         return res["v"]
 
+    def choose_backup(self, entries):
+        """Modal list of the backups. Returns the chosen entry (a readable one) or None. Unreadable rows are grey and
+        cannot be selected; an empty list shows the 'No backups yet' text."""
+        d = tk.Toplevel(self.win)
+        d.title(ui.RESTORE_TITLE)
+        d.transient(self.win)
+        d.resizable(False, False)
+        d.attributes("-topmost", True)
+        res = {"v": None}
+        box = None
+        if entries:
+            ttk.Label(d, text=ui.RESTORE_HEAD, padding=(12, 12, 12, 4)).pack(anchor="w")
+            box = tk.Listbox(d, width=78, height=min(12, len(entries)), exportselection=False, activestyle="none")
+            box.pack(padx=12, pady=4)
+            for i, e in enumerate(entries):
+                box.insert("end", backup.row_text(e))
+                if not e["readable"]:
+                    box.itemconfig(i, fg="gray60", selectforeground="gray60", selectbackground=box.cget("background"))
+
+            def on_select(_ev=None):
+                sel = box.curselection()
+                if sel and not entries[sel[0]]["readable"]:
+                    box.selection_clear(0, "end")
+            box.bind("<<ListboxSelect>>", on_select)
+            self.restore_on_select = on_select
+        else:
+            ttk.Label(d, text=ui.RESTORE_EMPTY, padding=16, wraplength=380).pack()
+        self.restore_list = box
+
+        def go():
+            if box is None:
+                return
+            sel = box.curselection()
+            if sel and entries[sel[0]]["readable"]:
+                res["v"] = entries[sel[0]]
+                d.destroy()
+        bf = ttk.Frame(d, padding=(12, 4, 12, 12))
+        bf.pack(anchor="e")
+        self.btn_restore_go = ttk.Button(bf, text=ui.BTN_RESTORE_GO, command=go)
+        if box is not None:
+            self.btn_restore_go.pack(side="left", padx=4)
+        ttk.Button(bf, text=ui.BTN_CANCEL, command=d.destroy).pack(side="left", padx=4)
+        d.protocol("WM_DELETE_WINDOW", d.destroy)
+        d.bind("<Escape>", lambda e: d.destroy())
+        d.grab_set()
+        self.restore_dialog = d
+        self.win.wait_window(d)
+        return res["v"]
+
+    def confirm_restore(self, entry):
+        return messagebox.askyesno(ui.APP_NAME, ui.CONFIRM_RESTORE.format(when=backup.row_text(dict(entry, newest=False)).split(" — ")[0]),
+                                   parent=self.win)
+
+    def restore_from_backup(self):
+        """General > Restore from backup…: independent of Apply, effective at once (after the confirmation)."""
+        entries = backup.list_backups(backup.backup_dir(self.app.config_path))
+        entry = self.choose_backup(entries)
+        if entry is None or not self.confirm_restore(entry):
+            return
+        if not self.app.request_restore(entry["path"]):
+            messagebox.showwarning(ui.APP_NAME, self.app.restore_failure or ui.MSG_RESTORE_BAD, parent=self.win)
+
     def confirm_overwrite(self):
         return messagebox.askyesno(ui.APP_NAME, ui.CONFIRM_OVERWRITE, parent=self.win)
 
@@ -3327,6 +3439,7 @@ class SettingsWindow:
         if choice == "discard":
             self._load_general()
             self._load_bar()
+            self.v_border_all.set(False)
             return True
         return False
 
@@ -3377,6 +3490,18 @@ class SettingsWindow:
             warn = ui.MSG_ICON_RANGE.format(lo=ICON_MIN, hi=ICON_MAX, n=n_icon)
         self.v["icon"].set(str(n_icon))
         c["icon_size"] = n_icon
+        raw_b = self.v["border"].get().strip()
+        n_border = theme.normalize_border(raw_b if raw_b else theme.BORDER)
+        if not raw_b.lstrip("-").isdigit() or not theme.BORDER_MIN <= int(raw_b) <= theme.BORDER_MAX:
+            warn += ui.MSG_BORDER_RANGE.format(lo=theme.BORDER_MIN, hi=theme.BORDER_MAX, n=n_border)
+        self.v["border"].set(str(n_border))
+        c["border"] = n_border
+        if self.v_border_all.get():                 # one-shot: the width (only the width) goes to every other panel too
+            for q in app.panels.values():
+                if q is not p:
+                    q.cfg["border"] = n_border
+                    q.apply_cfg()
+            self.v_border_all.set(False)
         for role, label, ed in (("title", ui.TAB_TITLE, self.title_ed), ("content", ui.TAB_CONTENT, self.content_ed)):
             st = ed.get()
             if not ed.size_valid():

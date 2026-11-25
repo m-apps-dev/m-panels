@@ -430,7 +430,7 @@ class TestMessageWindow(unittest.TestCase):
         return out
 
     def test_real_huge_lparam_does_not_break_the_window_procedure(self):
-        """The listening experiment died with OverflowError on HSHELL_GETMINRECT (lParam = a 64-bit pointer).
+        """A large message parameter (HSHELL_GETMINRECT sends lParam as a 64-bit pointer) overflows ctypes' default argument types.
         The product's window procedure takes WPARAM/LPARAM as Python ints of any size and never converts them."""
         mw = self.make(hooks_factory=RecHooks)
         mw.set_tasks_hooks(True)
@@ -778,7 +778,7 @@ class TestWin32Source(unittest.TestCase):
         self.assertIsInstance(self.src.foreground(), int)
 
     def test_real_big_handle_values_do_not_overflow(self):
-        """The experiment's OverflowError: a 64-bit value in a default-int argument. Typed arguments take any HWND."""
+        """A 64-bit value in a default-int argument overflows. Typed arguments take any HWND."""
         self.assertEqual(self.src.resolve(W(2 ** 40, pid=os.getpid()))[0] is not None, True)
         self.assertEqual(self.src._core_pid(2 ** 40), 0)                 # not a window: no children, no error
 

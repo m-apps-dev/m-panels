@@ -11,7 +11,7 @@ import changelog  # noqa: E402
 import strings  # noqa: E402
 import version  # noqa: E402
 
-SECTIONS = {"Panels", "Notes", "Calendar", "General", "Settings", "Bar", "Search", "Open windows", "Start button", "Help and About"}   # 1.2.0 groups
+SECTIONS = {"Panels", "Notes", "Calendar", "General", "Settings", "Bar", "Search", "Open windows", "Start button", "Help and About", "Backups"}   # 1.2.0 groups
 SAMPLE = """# Changelog
 
 ## 1.2.3 — 2030-01-02

@@ -45,7 +45,7 @@ To try it without touching your real desktop, use `M-Panels-Test.bat` (see "Test
 - **Items:** double-click opens, right-click gives Open / Open file location / Rename / Return to desktop. Drag items to reorder them or to move them to another panel.
 - **Tray icon:** Show / Hide, New panel, Settings, Quit. `pythonw mpanels.py --quit` asks the running copy to quit.
 - **Single instance:** starting M Panels while it runs just shows its panels and brings Settings to the front.
-- **Settings** (tabs: General, Panel, Title, Content, Calendar for calendar panels, Bar, About; General is shown first): name, color, opacity, start collapsed, open on hover, text styles, icon size, Start with Windows, Lock panels, Hide desktop icons, snapping. Nothing changes until you press Apply; closing with unapplied changes asks Apply / Discard / Cancel.
+- **Settings** (tabs: General, Panel, Title, Content, Calendar for calendar panels, Bar, About; General is shown first): name, color, opacity, border width (0–4 px; "Apply to all panels" sets it for every panel), start collapsed, open on hover, text styles, icon size, Start with Windows, Lock panels, Hide desktop icons, snapping. Nothing changes until you press Apply; closing with unapplied changes asks Apply / Discard / Cancel.
 - **Hide desktop icons** changes Explorer's "Show desktop icons" setting and restores it when M Panels quits. After a crash: `python mpanels.py --restore-desktop-icons`.
 
 ### Dragging items in
@@ -92,7 +92,7 @@ An optional strip along the top of the main monitor (Settings > Bar > "Show bar"
 ## Config, log and backups
 
 - `config.json` stores the looks (position, size, color, order, open/collapsed) and the calendar list; `defaults.json` stores your default look. Both are personal and git-ignored; see `config.example.json`.
-- Every start copies `config.json` to `backups\config-YYYYMMDD-HHMMSS.json` (the last 15 are kept). To go back: quit M Panels, copy a backup over `config.json`, start again.
+- Every start copies `config.json` to `backups\config-YYYYMMDD-HHMMSS.json` (the last 15 are kept). To go back: Settings > General > Restore from backup…, pick a copy and confirm; M Panels saves your current settings first, closes, and you start it again from the desktop shortcut. Panel folders and notes are not touched.
 - Errors and a few startup lines go to `mpanels.log` next to the program (rotates at 256 KB, 3 backups).
 
 ## Test mode

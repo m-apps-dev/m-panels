@@ -106,7 +106,7 @@ class TestActivate(unittest.TestCase):
             self.assertFalse(self.t.activate(1, 2))
 
     def test_a_failing_log_file_never_escapes(self):
-        """PermissionError while writing the log (seen in the experiment) must not break the caller."""
+        """PermissionError while writing the log (another process may hold the file) must not break the caller."""
         self.make(actions=mock.Mock(run=mock.Mock(return_value=False)))
         bad = mock.Mock()
         for name in ("info", "warning", "error", "exception"):

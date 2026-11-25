@@ -4,7 +4,7 @@ the real Windows Start menu by pressing the Win key once.
 The press is ONE SendInput call holding both events (Win down, Win up), so the key can never be left down between two calls.
 If Windows takes fewer than two events, or the call raises, a Win-up is sent again in a `finally` (the Win key is ALWAYS
 released). The click is a toggle by Windows' own rule: the Win key opens the menu when it is closed and closes it when it is
-open; the bar does not read the menu's state at click time (the experiment of 24.11 showed that is not needed).
+open; the bar does not read the menu's state at click time (testing showed that is not needed).
 
 No tkinter here. The Windows call (SendInput) is handed in, so tests use a made-up one; TEST mode uses FakeStartActions, which
 only records."""

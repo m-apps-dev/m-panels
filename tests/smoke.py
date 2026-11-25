@@ -567,6 +567,8 @@ open(os.path.join(root, "bozuk.ico"), "wb").write(b"not an icon")
 with _icon_mock.patch.object(winutil, "app_icon_path", return_value=os.path.join(root, "bozuk.ico")):
     check(mpanels.app_icon_image(32).size == (32, 32), "bozuk ikon dosyasında da hata yok")
 check(os.path.isfile(winutil.app_icon_path() or ""), "paketli assets/m_panels.ico bulunuyor")
+check(os.path.isfile(winutil.shortcut_icon_path() or "") and os.path.basename(winutil.shortcut_icon_path()) == "m_panels_shortcut.ico",
+      "paketli assets/m_panels_shortcut.ico (masaüstü kısayol ikonu) bulunuyor")
 
 # --- v0.5: takvim paneli (AĞSIZ: sahte indirici + geçici kaynak dosyası)
 import json  # noqa: E402

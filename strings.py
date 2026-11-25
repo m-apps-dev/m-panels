@@ -117,6 +117,30 @@ LBL_NAME = "Name"
 LBL_COLOR = "Color"
 LBL_OPACITY = "Opacity"
 LBL_ICON_SIZE = "Icon size (px, {lo}–{hi})"
+LBL_BORDER = "Border width (px, {lo}–{hi})"
+CHK_BORDER_ALL = "Apply to all panels"
+# Settings > General > Settings backups (restore)
+LBL_BACKUPS = "Settings backups"
+BTN_RESTORE = "Restore from backup…"
+RESTORE_TITLE = "Restore from backup"
+RESTORE_HEAD = "Choose the settings to go back to:"
+BTN_RESTORE_GO = "Restore"
+RESTORE_EMPTY = "No backups yet. M Panels saves a copy of your settings at start when they changed."
+RESTORE_ROW = "{when} — {count} {noun}: {kinds}"
+RESTORE_KINDS = {"shortcut": ("Shortcut", "Shortcuts"), "note": ("Note", "Notes"),
+                 "calendar": ("Calendar", "Calendars"), "other": ("Other", "Other")}   # (one, many) per panel kind
+RESTORE_ROW_EMPTY = "{when} — 0 panels"
+RESTORE_ROW_UNREADABLE = "{when} — unreadable"
+RESTORE_PANEL = "panel"
+RESTORE_PANELS = "panels"
+RESTORE_NEWEST = "(newest)"
+CONFIRM_RESTORE = ("Restore the settings saved on {when}?\n\n"
+                   "Your current settings are backed up first. Shortcut panel folders and notes stay on disk as they are; "
+                   "a folder that is in the backup but not on disk will not be opened.\n\n"
+                   "M Panels will close. Start it again from the desktop shortcut.")
+MSG_RESTORE_BAD = "That backup cannot be used. Nothing was changed."
+LOG_RESTORE_STOPPED = "restore stopped: current settings not backed up (%s)"
+MSG_RESTORE_NO_BACKUP = "Could not back up the current settings, so nothing was restored."
 CHK_START_COLLAPSED = "Start collapsed"
 CHK_HOVER_OPEN = "Open on hover"
 CHK_AUTOSTART = "Start with Windows"
@@ -137,6 +161,7 @@ MSG_ICONS_HIDDEN = "Desktop icons hidden (they return to normal when M Panels qu
 MSG_ICONS_RESTORED = "Desktop icons restored."
 MSG_APPLIED = "Applied."
 MSG_ICON_RANGE = " (Icon size must be a whole number from {lo} to {hi}; set to {n}.)"
+MSG_BORDER_RANGE = " (Border width must be a whole number from {lo} to {hi}; set to {n}.)"
 MSG_TEXT_RANGE = " ({what} text size must be from {lo} to {hi}; set to {n}.)"
 MSG_DEFAULT_SAVED = "This look is now the default for new panels."
 MSG_FACTORY_LOADED = "Factory settings loaded."
@@ -390,7 +415,7 @@ HELP_SECTIONS = (
         "Drag files or folders from the desktop onto a panel; they move into the panel's folder.",
         "Double-click an item to open it. Right-click for Open, Open file location, Rename and Return to desktop.",
         "Drag items to reorder them, or drop them on another panel to move them.",
-        "Settings: color, opacity, icon size, title and content text styles, start collapsed, open on hover.",
+        "Settings: color, opacity, border width (for all panels at once), icon size, title and content text styles, start collapsed, open on hover.",
     )),
     ("Note panels", (
         "Type directly in the panel; it saves as you type.",
@@ -456,8 +481,8 @@ HELP_SECTIONS = (
         "Start with Windows: starts M Panels quietly at login.",
         "Starting M Panels twice just brings the running copy forward.",
         "Settings change only when you press Apply. Closing with unapplied changes asks Apply / Discard / Cancel.",
-        "Every start saves a copy of your settings in the backups folder; the last 15 are kept.",
-        "To go back: quit M Panels, copy a backup over config.json, then start M Panels again.",
+        "At start, a copy of your settings is saved in the backups folder when they changed; the last 15 are kept.",
+        "To go back: Settings › General › Restore from backup…. M Panels closes; start it again from the desktop shortcut.",
     )),
     ("Known limitations", (
         "Programs running as administrator can be brought forward from the bar, but not minimized, restored or closed. Windows does not allow it.",

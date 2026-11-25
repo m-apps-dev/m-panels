@@ -2,7 +2,7 @@
 icons come from. Listing only: clicking a button (bring the window forward) is a later step.
 
 Parts, so everything but the Windows calls can be tested with a made-up source:
-  listed()        pure: the taskbar-like rule (diagnosis in docs/PLAN.md) plus "not one of our own windows";
+  listed()        pure: the taskbar-like rule plus "not one of our own windows";
   TaskModel       pure: the order (windows present at the first scan: process start time, tie -> one-time z-order;
                   every window seen later is appended at the end), change detection;
   layout(), fit_text()   pure: button widths, "+N" overflow, the "..." cut;

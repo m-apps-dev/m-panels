@@ -4,7 +4,7 @@ changed"; what changed is found by a full comparison (tasks.py).
 Both must be installed AND removed by the thread that runs the message loop (shellmsg.MessageWindow's thread): an
 out-of-context WinEvent hook delivers through that thread's messages. Every callback is cheap and never raises.
 
-Noise (measured, docs/PLAN.md): of ~240 object events per minute almost all belong to child windows and non-window
+Noise (measured): of ~240 object events per minute almost all belong to child windows and non-window
 objects. The callback drops them first: only idObject == OBJID_WINDOW and idChild == CHILDID_SELF, only top-level
 windows, and our own process's events are never delivered (WINEVENT_SKIPOWNPROCESS). The LOCATIONCHANGE event is not
 hooked at all (it floods)."""
@@ -22,7 +22,7 @@ SHELL_DIRTY = frozenset((1, 2, 4, 6, 13, 14, 0x8004))
 
 class Win32Hooks:
     """The real calls, with their types spelled out (a 64-bit handle or pointer must never go through a default
-    32-bit `int` argument: that was the OverflowError seen in the listening experiment)."""
+    32-bit `int` argument: large values overflow ctypes' default argument types and raise OverflowError)."""
 
     def __init__(self):
         self.proc_t = ctypes.WINFUNCTYPE(None, wt.HANDLE, wt.DWORD, wt.HWND, ctypes.c_long, ctypes.c_long,

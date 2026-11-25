@@ -95,7 +95,7 @@ def main(argv=None):
     if args.write_bat:
         return
 
-    icon = winutil.app_icon_path() or ""
+    icon = winutil.shortcut_icon_path() or ""
     if args.target:
         startup = desktop = os.path.abspath(args.target)
         os.makedirs(startup, exist_ok=True)

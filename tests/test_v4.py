@@ -185,7 +185,7 @@ class TestStringsAudit(unittest.TestCase):
 
 
 class TestCommentsEnglish(unittest.TestCase):
-    ALLOWED = ("Sürüm geçmişi",)          # the Turkish name of a NOTLAR.md section, quoted verbatim
+    ALLOWED = ("Sürüm geçmişi",)          # Turkish phrases allowed in comments, quoted verbatim
 
     def _texts(self, path):
         src = read(path)
@@ -430,6 +430,11 @@ class TestIcon(unittest.TestCase):
 
     def test_paketlenmis_yedek_ikon_var(self):
         self.assertTrue(os.path.isfile(os.path.join(ROOT, "assets", "m_panels.ico")))
+
+    def test_paketli_kisayol_ikonu_var(self):
+        self.assertTrue(os.path.isfile(os.path.join(ROOT, "assets", "m_panels_shortcut.ico")))
+        self.assertEqual(os.path.normcase(winutil.shortcut_icon_path()),
+                         os.path.normcase(os.path.join(ROOT, "assets", "m_panels_shortcut.ico")))
 
 
 class TestWindowStyles(unittest.TestCase):

@@ -346,7 +346,7 @@ def remove_note(data_dir, name):
 
 # ------------------------------------------------------------------ drag and drop
 def handle_drop(ctx, panel_name, src):
-    """Apply the rules when an item is dropped on a panel (see docs/PLAN.md)."""
+    """Apply the rules when an item is dropped on a panel: where it goes, and what happens to the source."""
     panel = ctx.panel_path(panel_name)
     src = os.path.abspath(src.strip().strip('"'))
     if not os.path.lexists(src):
